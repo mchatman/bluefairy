@@ -28,5 +28,5 @@ databases:
   size: db-s-1vcpu-1gb
 
 domains:
-- domain: wareit.ai
+- domain: api.wareit.ai
   type: PRIMARY
