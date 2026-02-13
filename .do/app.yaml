@@ -1,0 +1,32 @@
+name: bluefairy
+region: nyc3
+
+services:
+- name: bluefairy
+  git:
+    branch: main
+    repo_clone_url: https://github.com/mchatman/bluefairy.git
+  run_command: ./bluefairy
+  dockerfile_path: Dockerfile.prod
+  instance_count: 2
+  instance_size_slug: professional-xs
+  http_port: 8080
+
+  envs:
+  - key: PORT
+    value: "8080"
+  - key: JWT_SECRET
+    value: "your-production-jwt-secret"
+    type: SECRET
+  - key: TENANT_ORCHESTRATOR_URL
+    value: "https://tenant-orchestrator-bluefairy.ondigitalocean.app"
+
+databases:
+- name: bluefairy-db
+  engine: PG
+  version: "16"
+  size: db-s-1vcpu-1gb
+
+domains:
+- domain: wareit.ai
+  type: PRIMARY

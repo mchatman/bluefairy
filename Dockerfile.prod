@@ -1,0 +1,36 @@
+# Build stage
+FROM golang:1.24-alpine AS builder
+
+WORKDIR /app
+
+# Copy go mod files first for better caching
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build the application
+RUN CGO_ENABLED=0 GOOS=linux go build -o api cmd/api/main.go cmd/api/routes.go
+
+# Production stage
+FROM alpine:latest
+
+# Install ca-certificates and curl for HTTPS requests and migrate tool
+RUN apk --no-cache add ca-certificates curl
+
+# Install migrate tool
+RUN curl -L https://github.com/golang-migrate/migrate/releases/download/v4.18.1/migrate.linux-amd64.tar.gz | tar xvz && \
+    mv migrate /usr/local/bin/migrate
+
+WORKDIR /root/
+
+# Copy the binary and migrations from the build stage
+COPY --from=builder /app/api .
+COPY --from=builder /app/migrations ./migrations
+
+# Expose port
+EXPOSE 8000
+
+# Run the binary
+CMD ["./api"]
