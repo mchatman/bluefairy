@@ -11,7 +11,7 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -o api cmd/api/main.go cmd/api/routes.go
+RUN CGO_ENABLED=0 GOOS=linux go build -o bluefairy cmd/api/main.go cmd/api/routes.go
 
 # Production stage
 FROM alpine:latest
@@ -26,11 +26,11 @@ RUN curl -L https://github.com/golang-migrate/migrate/releases/download/v4.18.1/
 WORKDIR /root/
 
 # Copy the binary and migrations from the build stage
-COPY --from=builder /app/api .
+COPY --from=builder /app/bluefairy .
 COPY --from=builder /app/migrations ./migrations
 
 # Expose port
 EXPOSE 8000
 
 # Run the binary
-CMD ["./api"]
+CMD ["./bluefairy"]
