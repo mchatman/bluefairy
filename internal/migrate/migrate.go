@@ -4,89 +4,81 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
-	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	"github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	_ "github.com/lib/pq"
 )
 
-// ensureSchemaAccess creates a private schema (matching the DB username) and
-// returns an updated DATABASE_URL with search_path set to that schema.
-// This works around PostgreSQL 16 revoking CREATE on "public" for non-owners
-// (common on DigitalOcean App Platform dev databases).
-func ensureSchemaAccess(databaseURL string) (string, error) {
-	db, err := sql.Open("postgres", databaseURL)
-	if err != nil {
-		return databaseURL, err
-	}
-	defer db.Close()
-
-	// Check if we can create in public
+// findWritableSchema probes for a schema the current user can CREATE in.
+// Returns the schema name or empty string if none found.
+func findWritableSchema(db *sql.DB) string {
+	// Check public first
 	var canCreate bool
-	err = db.QueryRow(`SELECT has_schema_privilege(current_user, 'public', 'CREATE')`).Scan(&canCreate)
+	err := db.QueryRow(`SELECT has_schema_privilege(current_user, 'public', 'CREATE')`).Scan(&canCreate)
 	if err == nil && canCreate {
-		return databaseURL, nil // public schema works fine
+		return ""
 	}
 
-	// Get current username to use as schema name
-	var username string
-	if err := db.QueryRow(`SELECT current_user`).Scan(&username); err != nil {
-		return databaseURL, fmt.Errorf("failed to get current user: %w", err)
-	}
-
-	log.Printf("No CREATE on public schema, using private schema %q", username)
-
-	// Create the user's own schema (they have permission for this)
-	_, err = db.Exec(fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %q`, username))
+	// Look for any schema the user owns or has CREATE on
+	rows, err := db.Query(`
+		SELECT n.nspname FROM pg_namespace n
+		WHERE n.nspname NOT LIKE 'pg_%'
+		  AND n.nspname != 'information_schema'
+		  AND has_schema_privilege(current_user, n.nspname, 'CREATE')
+		ORDER BY
+		  CASE WHEN n.nspname = 'public' THEN 1 ELSE 0 END,
+		  n.nspname
+	`)
 	if err != nil {
-		return databaseURL, fmt.Errorf("failed to create schema %q: %w", username, err)
+		return ""
 	}
+	defer rows.Close()
 
-	// Update the DATABASE_URL to set search_path
-	u, err := url.Parse(databaseURL)
-	if err != nil {
-		// Might be a postgres:// style DSN — try key=value approach
-		if strings.Contains(databaseURL, "search_path") {
-			return databaseURL, nil
+	for rows.Next() {
+		var s string
+		if rows.Scan(&s) == nil {
+			log.Printf("Found writable schema: %q", s)
+			return s
 		}
-		return databaseURL + fmt.Sprintf("&search_path=%s,public", username), nil
 	}
-
-	q := u.Query()
-	q.Set("search_path", fmt.Sprintf("%s,public", username))
-	u.RawQuery = q.Encode()
-
-	return u.String(), nil
+	return ""
 }
 
 func RunMigrations(databaseURL string) error {
 	log.Println("Running database migrations...")
 
-	// Ensure we have schema access (handles DO App Platform PG 16 restrictions)
-	resolvedURL, err := ensureSchemaAccess(databaseURL)
+	db, err := sql.Open("postgres", databaseURL)
 	if err != nil {
-		log.Printf("Warning: schema access check failed: %v (continuing with original URL)", err)
-		resolvedURL = databaseURL
+		return fmt.Errorf("failed to open database: %w", err)
+	}
+	defer db.Close()
+
+	// Find a writable schema and set search_path on the connection
+	schema := findWritableSchema(db)
+	if schema != "" && schema != "public" {
+		log.Printf("No CREATE on public, switching search_path to %q", schema)
+		_, err = db.Exec(fmt.Sprintf(`SET search_path TO %s, public`, schema))
+		if err != nil {
+			log.Printf("Warning: failed to set search_path: %v", err)
+		}
 	}
 
-	// Try golang-migrate first
-	err = runGolangMigrate(resolvedURL)
+	// Try golang-migrate with WithInstance so our search_path sticks
+	err = runGolangMigrate(db)
 	if err != nil {
 		log.Printf("golang-migrate failed: %v, trying direct SQL approach", err)
-		return runDirectSQL(resolvedURL)
+		return runDirectSQL(db)
 	}
 
 	log.Println("golang-migrate completed successfully")
 	return nil
 }
 
-func runGolangMigrate(databaseURL string) error {
-	// Get current working directory and look for migrations folder
+func runGolangMigrate(db *sql.DB) error {
 	wd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get working directory: %w", err)
@@ -100,11 +92,16 @@ func runGolangMigrate(databaseURL string) error {
 
 	sourceURL := fmt.Sprintf("file://%s", migrationsPath)
 
-	m, err := migrate.New(sourceURL, databaseURL)
+	driver, err := postgres.WithInstance(db, &postgres.Config{})
+	if err != nil {
+		return fmt.Errorf("failed to create postgres driver: %w", err)
+	}
+
+	m, err := migrate.NewWithDatabaseInstance(sourceURL, "postgres", driver)
 	if err != nil {
 		return fmt.Errorf("failed to create migrate instance: %w", err)
 	}
-	defer m.Close()
+	// Don't defer m.Close() — it would close the shared db connection
 
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
 		return fmt.Errorf("failed to run migrations: %w", err)
@@ -119,14 +116,8 @@ func runGolangMigrate(databaseURL string) error {
 	return nil
 }
 
-func runDirectSQL(databaseURL string) error {
+func runDirectSQL(db *sql.DB) error {
 	log.Println("Running direct SQL migrations...")
-
-	db, err := sql.Open("postgres", databaseURL)
-	if err != nil {
-		return fmt.Errorf("failed to connect to database: %w", err)
-	}
-	defer db.Close()
 
 	migrations := []string{
 		`CREATE TABLE IF NOT EXISTS accounts (
