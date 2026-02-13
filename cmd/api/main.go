@@ -92,9 +92,10 @@ func main() {
 	defer db.Close()
 
 	// Run database migrations
-	if err := migrate.RunMigrations(cfg.DatabaseURL); err != nil {
-		log.Fatalf("Failed to run migrations: %v", err)
-	}
+	log.Println("Skipping migrations temporarily...")
+	// if err := migrate.RunMigrations(cfg.DatabaseURL); err != nil {
+	// 	log.Fatalf("Failed to run migrations: %v", err)
+	// }
 
 	pool := db.Pool()
 	app := New(cfg, pool)
