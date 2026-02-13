@@ -13,6 +13,7 @@ import (
 
 	"github.com/mchatman/bluefairy/internal/config"
 	"github.com/mchatman/bluefairy/internal/db"
+	"github.com/mchatman/bluefairy/internal/migrate"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -89,6 +90,12 @@ func main() {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 	defer db.Close()
+
+	// Run database migrations
+	if err := migrate.RunMigrations(cfg.DatabaseURL); err != nil {
+		log.Printf("Warning: Failed to run migrations: %v", err)
+		// Don't fail startup - migrations might already be applied
+	}
 
 	pool := db.Pool()
 	app := New(cfg, pool)

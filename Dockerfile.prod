@@ -28,13 +28,9 @@ WORKDIR /root/
 # Copy the binary and migrations from the build stage
 COPY --from=builder /app/bluefairy .
 COPY --from=builder /app/migrations ./migrations
-COPY --from=builder /app/start.sh .
-
-# Make the script executable
-RUN chmod +x start.sh
 
 # Expose port
 EXPOSE 8000
 
-# Run migrations and start the app
-CMD ["./start.sh"]
+# Run the binary
+CMD ["./bluefairy"]
