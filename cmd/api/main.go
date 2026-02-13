@@ -93,8 +93,7 @@ func main() {
 
 	// Run database migrations
 	if err := migrate.RunMigrations(cfg.DatabaseURL); err != nil {
-		log.Printf("Warning: Failed to run migrations: %v", err)
-		// Don't fail startup - migrations might already be applied
+		log.Fatalf("Failed to run migrations: %v", err)
 	}
 
 	pool := db.Pool()

@@ -1,0 +1,28 @@
+name: migrate-job
+region: nyc3
+
+jobs:
+- name: migrate-tables
+  git:
+    branch: main
+    repo_clone_url: https://github.com/mchatman/bluefairy.git
+  run_command: |
+    apk add --no-cache postgresql-client &&
+    echo "Setting up database schema and tables..." &&
+    psql "$DATABASE_URL" -f setup_schema.sql &&
+    echo "Database setup completed successfully"
+  instance_count: 1
+  instance_size_slug: basic-xxs
+  kind: POST_DEPLOY
+
+  envs:
+  - key: DATABASE_URL
+    value: ${bluefairy-db.DATABASE_URL}
+    scope: RUN_TIME
+    type: SECRET
+
+databases:
+- name: bluefairy-db
+  engine: PG
+  version: "16"
+  size: db-s-1vcpu-1gb
