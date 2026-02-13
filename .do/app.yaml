@@ -15,11 +15,15 @@ services:
   envs:
   - key: PORT
     value: "8080"
+  - key: DATABASE_URL
+    value: ${bluefairy-db.DATABASE_URL}
+    scope: RUN_TIME
+    type: SECRET
   - key: JWT_SECRET
     value: "your-production-jwt-secret"
     type: SECRET
   - key: TENANT_ORCHESTRATOR_URL
-    value: "https://tenant-orchestrator-bluefairy.ondigitalocean.app"
+    value: "https://tenant-orchestrator-qsha7.ondigitalocean.app"
 
 databases:
 - name: bluefairy-db
