@@ -6,7 +6,7 @@ services:
   git:
     branch: main
     repo_clone_url: https://github.com/mchatman/bluefairy.git
-  run_command: ./bluefairy
+  run_command: ./start.sh
   dockerfile_path: Dockerfile.prod
   instance_count: 2
   instance_size_slug: professional-xs
