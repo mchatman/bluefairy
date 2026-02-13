@@ -1,7 +1,6 @@
 package migrate
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"os"
@@ -9,7 +8,7 @@ import (
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
-	"github.com/golang-migrate/migrate/v4/source/file"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
 )
 
 func RunMigrations(databaseURL string) error {
