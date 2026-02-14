@@ -106,10 +106,55 @@ func (c *Client) GetOrCreateInstance(ctx context.Context, userID string, token s
 	return inst, nil
 }
 
-// GetInstance returns a cached instance if available.
-func (c *Client) GetInstance(userID string) (*Instance, bool) {
+// GetInstanceFromOrchestrator looks up an instance via the tenant-orchestrator API.
+func (c *Client) GetInstanceFromOrchestrator(ctx context.Context, userID string) (*Instance, error) {
+	// Check cache first
 	c.mu.RLock()
-	defer c.mu.RUnlock()
-	inst, ok := c.instances[userID]
-	return inst, ok
+	if inst, ok := c.instances[userID]; ok {
+		c.mu.RUnlock()
+		return inst, nil
+	}
+	c.mu.RUnlock()
+
+	url := fmt.Sprintf("%s/tenants/%s/instance", c.orchestratorURL, userID)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("calling tenant-orchestrator: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("orchestrator error %d: %s", resp.StatusCode, body)
+	}
+
+	var result struct {
+		Endpoint string `json:"endpoint"`
+		Status   string `json:"status"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	inst := &Instance{
+		Name:     result.Endpoint,
+		Endpoint: fmt.Sprintf("https://%s.wareit.ai", result.Endpoint),
+	}
+
+	// Cache it
+	c.mu.Lock()
+	c.instances[userID] = inst
+	c.mu.Unlock()
+
+	return inst, nil
 }

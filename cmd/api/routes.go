@@ -9,6 +9,7 @@ import (
 	"github.com/mchatman/bluefairy/internal/account"
 	"github.com/mchatman/bluefairy/internal/auth"
 	"github.com/mchatman/bluefairy/internal/proxy"
+	"github.com/mchatman/bluefairy/internal/tenant"
 	"github.com/mchatman/bluefairy/internal/user"
 )
 
@@ -43,13 +44,14 @@ func (a *App) loadRoutes() {
 	router.Post("/auth/signup", authHandler.Signup)
 	router.Post("/auth/login", authHandler.Login)
 
+	// Initialize tenant client for instance lookups
+	tenantClient := tenant.NewClient()
+
 	// Protected routes (require authentication)
 	router.Group(func(r chi.Router) {
 		r.Use(auth.Middleware(a.config.JWTSecret))
 
-		// Add protected routes here
 		r.Get("/me", func(w http.ResponseWriter, r *http.Request) {
-			// Get claims from context (set by auth middleware)
 			claims := auth.GetClaims(r.Context())
 			if claims == nil {
 				http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -62,18 +64,40 @@ func (a *App) loadRoutes() {
 				return
 			}
 
-			// Return user info
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(usr)
+		})
+
+		// Instance lookup — returns the tenant URL for the authenticated user
+		r.Get("/instance", func(w http.ResponseWriter, r *http.Request) {
+			claims := auth.GetClaims(r.Context())
+			if claims == nil {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+
+			inst, err := tenantClient.GetInstanceFromOrchestrator(r.Context(), claims.Subject)
+			if err != nil {
+				http.Error(w, "Failed to look up instance", http.StatusBadGateway)
+				return
+			}
+			if inst == nil {
+				http.Error(w, "No instance found", http.StatusNotFound)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{
+				"endpoint": inst.Endpoint,
+				"name":     inst.Name,
+			})
 		})
 
 		// Proxy authenticated requests to tenant instances
 		proxyHandler, err := proxy.NewHandler("")
 		if err != nil {
 			// Log error but don't fail startup
-			// The proxy handler will create the tenant client internally
 		} else {
-			// Proxy both /api/* and /gateway/* paths to tenant instances
 			r.HandleFunc("/api/*", proxyHandler.HandleProxy)
 			r.HandleFunc("/gateway/*", proxyHandler.HandleProxy)
 		}
