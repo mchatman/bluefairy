@@ -13,11 +13,45 @@ import (
 	"github.com/mchatman/bluefairy/internal/user"
 )
 
-func (a *App) loadRoutes() {
-	router := chi.NewRouter()
+const dashboardHost = "dashboard.wareit.ai"
+const loginURL = "https://aware-web-tawny.vercel.app"
 
+func (a *App) loadRoutes() {
+	// Dashboard proxy — served on dashboard.wareit.ai
+	dashboard := proxy.NewDashboardHandler(a.config.JWTSecret, loginURL)
+
+	// API router — served on all other hosts
+	apiRouter := a.buildAPIRouter()
+
+	// Top-level mux routes by Host header
+	router := chi.NewRouter()
 	router.Use(middleware.Logger)
 	router.Use(middleware.Recoverer)
+
+	router.HandleFunc("/*", func(w http.ResponseWriter, r *http.Request) {
+		host := r.Host
+		// Strip port if present
+		if i := len(host) - 1; i > 0 {
+			for i > 0 && host[i] != ':' && host[i] != ']' {
+				i--
+			}
+			if i > 0 && host[i] == ':' {
+				host = host[:i]
+			}
+		}
+
+		if host == dashboardHost {
+			dashboard.ServeHTTP(w, r)
+		} else {
+			apiRouter.ServeHTTP(w, r)
+		}
+	})
+
+	a.router = router
+}
+
+func (a *App) buildAPIRouter() http.Handler {
+	router := chi.NewRouter()
 
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -104,5 +138,5 @@ func (a *App) loadRoutes() {
 		}
 	})
 
-	a.router = router
+	return router
 }
