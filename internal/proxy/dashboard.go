@@ -234,7 +234,7 @@ func (d *DashboardHandler) handleProxy(w http.ResponseWriter, r *http.Request) {
 	inst, err := d.tenantClient.GetInstanceFromOrchestrator(r.Context(), claims.Subject)
 	if err != nil {
 		log.Printf("Failed to look up tenant for user %s: %v", claims.Subject, err)
-		http.Error(w, "Failed to load your workspace", http.StatusBadGateway)
+		serveWorkspaceLoading(w)
 		return
 	}
 	if inst == nil {
@@ -298,19 +298,25 @@ func (d *DashboardHandler) handleProxy(w http.ResponseWriter, r *http.Request) {
 		req.Host = routeHost
 	}
 
-	// Show friendly error page if the tenant is unreachable or starting up
+	// Show friendly error page if the tenant is unreachable or starting up.
+	// IMPORTANT: Do NOT return 502/503 — App Platform intercepts those
+	// and replaces our response with its own error page.
 	proxy.ErrorHandler = func(rw http.ResponseWriter, req *http.Request, err error) {
 		log.Printf("[dashboard] proxy error for user %s: %v", claims.Subject, err)
 		if wantsHTML(req) {
 			serveWorkspaceLoading(rw)
 			return
 		}
-		http.Error(rw, `{"error":"workspace_starting","message":"Your workspace is starting up. Please retry in a few seconds."}`, http.StatusBadGateway)
+		rw.Header().Set("Content-Type", "application/json")
+		rw.Header().Set("Retry-After", "5")
+		rw.WriteHeader(http.StatusOK)
+		rw.Write([]byte(`{"error":"workspace_starting","message":"Your workspace is starting up. Please retry in a few seconds."}`))
 	}
 
 	proxy.ModifyResponse = func(resp *http.Response) error {
 		if resp.StatusCode == http.StatusBadGateway || resp.StatusCode == http.StatusServiceUnavailable {
-			// Intercept 502/503 from the backend and replace with friendly page
+			// Intercept 502/503 from the backend and replace with friendly page.
+			// Use 200 to prevent App Platform from replacing our response.
 			resp.Body.Close()
 			body := []byte(workspaceLoadingHTML)
 			resp.Body = io.NopCloser(bytes.NewReader(body))
@@ -318,7 +324,7 @@ func (d *DashboardHandler) handleProxy(w http.ResponseWriter, r *http.Request) {
 			resp.Header.Set("Content-Length", fmt.Sprintf("%d", len(body)))
 			resp.Header.Set("Content-Type", "text/html; charset=utf-8")
 			resp.Header.Set("Retry-After", "5")
-			resp.StatusCode = http.StatusBadGateway
+			resp.StatusCode = http.StatusOK
 		}
 		return nil
 	}
@@ -536,10 +542,11 @@ func isWebSocketUpgrade(r *http.Request) bool {
 }
 
 // serveWorkspaceLoading writes the friendly "loading" page as a full response.
+// Uses 200 instead of 502 to prevent App Platform from intercepting the response.
 func serveWorkspaceLoading(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Retry-After", "5")
-	w.WriteHeader(http.StatusBadGateway)
+	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(workspaceLoadingHTML))
 }
 
