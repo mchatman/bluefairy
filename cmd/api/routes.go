@@ -17,11 +17,17 @@ const dashboardHost = "dashboard.wareit.ai"
 const loginURL = "https://aware-web-tawny.vercel.app"
 
 func (a *App) loadRoutes() {
+	// Initialize repositories and services needed by both dashboard and API
+	accountRepo := account.NewRepository(a.pool)
+	userRepo := user.NewRepository(a.pool)
+	accountService := account.NewService(accountRepo)
+	userService := user.NewService(userRepo)
+
 	// Dashboard proxy — served on dashboard.wareit.ai
-	dashboard := proxy.NewDashboardHandler(a.config.JWTSecret, loginURL)
+	dashboard := proxy.NewDashboardHandler(a.config, loginURL, a.pool, userService)
 
 	// API router — served on all other hosts
-	apiRouter := a.buildAPIRouter()
+	apiRouter := a.buildAPIRouter(userService, accountService)
 
 	// Top-level mux routes by Host header
 	router := chi.NewRouter()
@@ -50,7 +56,7 @@ func (a *App) loadRoutes() {
 	a.router = router
 }
 
-func (a *App) buildAPIRouter() http.Handler {
+func (a *App) buildAPIRouter(userService *user.Service, accountService *account.Service) http.Handler {
 	router := chi.NewRouter()
 
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
@@ -63,20 +69,13 @@ func (a *App) buildAPIRouter() http.Handler {
 		w.Write([]byte("OK"))
 	})
 
-	// Initialize repositories
-	accountRepo := account.NewRepository(a.pool)
-	userRepo := user.NewRepository(a.pool)
-
-	// Initialize services
-	accountService := account.NewService(accountRepo)
-	userService := user.NewService(userRepo)
-
 	// Initialize handlers
-	authHandler := auth.NewHandler(a.config, userService, accountService)
+	authHandler := auth.NewHandler(a.config, userService, accountService, a.pool)
 
-	// Auth routes
+	// Auth routes (public)
 	router.Post("/auth/signup", authHandler.Signup)
 	router.Post("/auth/login", authHandler.Login)
+	router.Post("/auth/refresh", authHandler.Refresh)
 
 	// Initialize tenant client for instance lookups
 	tenantClient := tenant.NewClient()

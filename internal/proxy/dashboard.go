@@ -1,17 +1,29 @@
 package proxy
 
 import (
+	"crypto/tls"
+	"fmt"
+	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"sync"
+	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/mchatman/bluefairy/internal/auth"
+	"github.com/mchatman/bluefairy/internal/config"
 	"github.com/mchatman/bluefairy/internal/tenant"
+	"github.com/mchatman/bluefairy/internal/user"
 )
 
-const dashboardCookieName = "aware_dashboard"
+const (
+	dashboardCookieName = "aware_dashboard"
+	refreshCookieName   = "aware_refresh"
+)
 
 // DashboardHandler serves the tenant proxy on dashboard.wareit.ai.
 // It handles:
@@ -19,16 +31,22 @@ const dashboardCookieName = "aware_dashboard"
 //   - /logout                   — clears cookie, redirects to login
 //   - /*                        — validates cookie, proxies to tenant
 type DashboardHandler struct {
+	cfg          *config.Config
 	jwtSecret    string
 	tenantClient *tenant.Client
 	loginURL     string // e.g. https://aware-web-tawny.vercel.app
+	refreshStore *auth.RefreshStore
+	userService  *user.Service
 }
 
-func NewDashboardHandler(jwtSecret string, loginURL string) *DashboardHandler {
+func NewDashboardHandler(cfg *config.Config, loginURL string, pool *pgxpool.Pool, userService *user.Service) *DashboardHandler {
 	return &DashboardHandler{
-		jwtSecret:    jwtSecret,
+		cfg:          cfg,
+		jwtSecret:    cfg.JWTSecret,
 		tenantClient: tenant.NewClient(),
 		loginURL:     loginURL,
+		refreshStore: auth.NewRefreshStore(pool),
+		userService:  userService,
 	}
 }
 
@@ -60,7 +78,7 @@ func (d *DashboardHandler) handleCallback(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Set HTTP-only cookie on this domain
+	// Set HTTP-only cookie for the JWT on this domain
 	http.SetCookie(w, &http.Cookie{
 		Name:     dashboardCookieName,
 		Value:    tokenStr,
@@ -70,6 +88,19 @@ func (d *DashboardHandler) handleCallback(w http.ResponseWriter, r *http.Request
 		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 	})
+
+	// Also set refresh token cookie if provided in the callback URL
+	if rt := r.URL.Query().Get("refresh_token"); rt != "" {
+		http.SetCookie(w, &http.Cookie{
+			Name:     refreshCookieName,
+			Value:    rt,
+			Path:     "/",
+			MaxAge:   d.cfg.RefreshTokenTTLDays * 24 * 60 * 60,
+			HttpOnly: true,
+			Secure:   true,
+			SameSite: http.SameSiteLaxMode,
+		})
+	}
 
 	// Look up the tenant to get the gateway token for WebSocket auth
 	inst, err := d.tenantClient.GetInstanceFromOrchestrator(r.Context(), claims.Subject)
@@ -94,8 +125,54 @@ func (d *DashboardHandler) handleLogout(w http.ResponseWriter, r *http.Request) 
 		SameSite: http.SameSiteLaxMode,
 	})
 
+	// Clear the refresh token cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     refreshCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	// Revoke all refresh tokens for the user if we can identify them
+	if c, err := r.Cookie(dashboardCookieName); err == nil && c.Value != "" {
+		// Try to parse claims even from an expired JWT to get the user ID
+		if claims, err := auth.VerifyAccessToken(d.jwtSecret, c.Value); err == nil {
+			_ = d.refreshStore.RevokeAllForUser(r.Context(), claims.Subject)
+		}
+	}
+	if c, err := r.Cookie(refreshCookieName); err == nil && c.Value != "" {
+		tokenHash := auth.SHA256Hash(c.Value)
+		if userID, err := d.refreshStore.Validate(r.Context(), tokenHash); err == nil {
+			_ = d.refreshStore.RevokeAllForUser(r.Context(), userID)
+		}
+	}
+
 	// Redirect to aware-web's logout to clear its cookie too
 	http.Redirect(w, r, d.loginURL+"/logout", http.StatusFound)
+}
+
+func (d *DashboardHandler) clearAllCookies(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     dashboardCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	})
+	http.SetCookie(w, &http.Cookie{
+		Name:     refreshCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	})
 }
 
 func (d *DashboardHandler) handleProxy(w http.ResponseWriter, r *http.Request) {
@@ -108,15 +185,14 @@ func (d *DashboardHandler) handleProxy(w http.ResponseWriter, r *http.Request) {
 
 	claims, err := auth.VerifyAccessToken(d.jwtSecret, cookie.Value)
 	if err != nil {
-		// Token expired or invalid — clear cookie and redirect to login
-		http.SetCookie(w, &http.Cookie{
-			Name:   dashboardCookieName,
-			Value:  "",
-			Path:   "/",
-			MaxAge: -1,
-		})
-		http.Redirect(w, r, d.loginURL, http.StatusFound)
-		return
+		// JWT is invalid/expired — attempt transparent refresh
+		claims, err = d.tryRefresh(w, r)
+		if err != nil {
+			// Refresh failed — clear everything and redirect to login
+			d.clearAllCookies(w)
+			http.Redirect(w, r, d.loginURL, http.StatusFound)
+			return
+		}
 	}
 
 	// Look up tenant instance
@@ -139,6 +215,12 @@ func (d *DashboardHandler) handleProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Handle WebSocket upgrades via hijack+splice (httputil.ReverseProxy doesn't support them)
+	if isWebSocketUpgrade(r) {
+		d.handleWebSocketProxy(w, r, target, inst.Token, claims.Subject, claims.Email)
+		return
+	}
+
 	// Reverse proxy to the tenant
 	proxy := httputil.NewSingleHostReverseProxy(target)
 
@@ -158,12 +240,196 @@ func (d *DashboardHandler) handleProxy(w http.ResponseWriter, r *http.Request) {
 		req.Host = target.Host
 	}
 
-	// Handle WebSocket upgrades
-	if isWebSocketUpgrade(r) {
-		proxy.ModifyResponse = nil
+	proxy.ServeHTTP(w, r)
+}
+
+func (d *DashboardHandler) handleWebSocketProxy(w http.ResponseWriter, r *http.Request, target *url.URL, gatewayToken, userID, userEmail string) {
+	// Determine backend address, adding default port if needed.
+	backendAddr := target.Host
+	if _, _, err := net.SplitHostPort(backendAddr); err != nil {
+		if target.Scheme == "https" || target.Scheme == "wss" {
+			backendAddr = net.JoinHostPort(backendAddr, "443")
+		} else {
+			backendAddr = net.JoinHostPort(backendAddr, "80")
+		}
 	}
 
-	proxy.ServeHTTP(w, r)
+	// Hijack the client connection.
+	hj, ok := w.(http.Hijacker)
+	if !ok {
+		http.Error(w, "Server does not support hijacking", http.StatusInternalServerError)
+		return
+	}
+	clientConn, clientBuf, err := hj.Hijack()
+	if err != nil {
+		log.Printf("[dashboard-ws] hijack failed: %v", err)
+		return
+	}
+
+	// Dial the backend.
+	var backendConn net.Conn
+	if target.Scheme == "https" || target.Scheme == "wss" {
+		host, _, _ := net.SplitHostPort(backendAddr)
+		backendConn, err = tls.Dial("tcp", backendAddr, &tls.Config{ServerName: host})
+	} else {
+		backendConn, err = net.Dial("tcp", backendAddr)
+	}
+	if err != nil {
+		log.Printf("[dashboard-ws] backend connect failed addr=%s: %v", backendAddr, err)
+		_, _ = clientConn.Write([]byte("HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nGateway unreachable"))
+		clientConn.Close()
+		return
+	}
+
+	// Build upstream path with query parameters.
+	upstreamPath := r.URL.Path
+	if upstreamPath == "" {
+		upstreamPath = "/"
+	}
+	q := r.URL.Query()
+	if gatewayToken != "" {
+		q.Set("token", gatewayToken)
+	}
+	if encoded := q.Encode(); encoded != "" {
+		upstreamPath += "?" + encoded
+	}
+
+	// Build the HTTP upgrade request.
+	var reqBuf strings.Builder
+	reqBuf.WriteString(fmt.Sprintf("GET %s HTTP/1.1\r\n", upstreamPath))
+
+	hostWritten := false
+	for key, vals := range r.Header {
+		lower := strings.ToLower(key)
+		switch lower {
+		case "host":
+			reqBuf.WriteString(fmt.Sprintf("Host: %s\r\n", target.Host))
+			hostWritten = true
+		case "origin":
+			reqBuf.WriteString(fmt.Sprintf("Origin: %s://%s\r\n", target.Scheme, target.Host))
+		default:
+			for _, v := range vals {
+				reqBuf.WriteString(fmt.Sprintf("%s: %s\r\n", key, v))
+			}
+		}
+	}
+	if !hostWritten {
+		reqBuf.WriteString(fmt.Sprintf("Host: %s\r\n", target.Host))
+	}
+	reqBuf.WriteString(fmt.Sprintf("X-User-ID: %s\r\n", userID))
+	reqBuf.WriteString(fmt.Sprintf("X-User-Email: %s\r\n", userEmail))
+	reqBuf.WriteString("\r\n")
+
+	// Send the upgrade request to the backend.
+	_, err = backendConn.Write([]byte(reqBuf.String()))
+	if err != nil {
+		log.Printf("[dashboard-ws] backend write failed: %v", err)
+		backendConn.Close()
+		clientConn.Close()
+		return
+	}
+
+	// Flush any buffered data from the hijacked connection to the backend.
+	if clientBuf.Reader.Buffered() > 0 {
+		buffered := make([]byte, clientBuf.Reader.Buffered())
+		_, _ = clientBuf.Read(buffered)
+		_, _ = backendConn.Write(buffered)
+	}
+
+	// Bidirectional splice.
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		_, _ = io.Copy(clientConn, backendConn)
+		if tc, ok := clientConn.(*net.TCPConn); ok {
+			_ = tc.CloseWrite()
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		_, _ = io.Copy(backendConn, clientConn)
+		if tc, ok := backendConn.(*net.TCPConn); ok {
+			_ = tc.CloseWrite()
+		}
+	}()
+
+	wg.Wait()
+	backendConn.Close()
+	clientConn.Close()
+}
+
+// tryRefresh attempts to transparently refresh an expired JWT using the
+// refresh token cookie. On success it sets new dashboard + refresh cookies
+// and returns the fresh JWT claims. On failure it returns an error.
+func (d *DashboardHandler) tryRefresh(w http.ResponseWriter, r *http.Request) (*auth.JWTClaims, error) {
+	rc, err := r.Cookie(refreshCookieName)
+	if err != nil || rc.Value == "" {
+		return nil, fmt.Errorf("no refresh cookie")
+	}
+
+	ctx := r.Context()
+	oldHash := auth.SHA256Hash(rc.Value)
+
+	// Validate old refresh token
+	userID, err := d.refreshStore.Validate(ctx, oldHash)
+	if err != nil {
+		return nil, fmt.Errorf("invalid refresh token: %w", err)
+	}
+
+	// Revoke old refresh token (rotation)
+	_ = d.refreshStore.Revoke(ctx, oldHash)
+
+	// Look up the user
+	usr, err := d.userService.GetUser(ctx, userID)
+	if err != nil || usr == nil {
+		return nil, fmt.Errorf("user lookup failed")
+	}
+
+	// Issue new JWT
+	token, err := auth.SignAccessToken(d.jwtSecret, usr.ID, usr.Email, "free", d.cfg.AccessTokenTTL)
+	if err != nil {
+		return nil, fmt.Errorf("sign access token: %w", err)
+	}
+
+	// Issue new refresh token
+	newRaw := auth.GenerateOpaqueToken()
+	newHash := auth.SHA256Hash(newRaw)
+	refreshExpiry := time.Now().Add(time.Duration(d.cfg.RefreshTokenTTLDays) * 24 * time.Hour)
+	if err := d.refreshStore.Create(ctx, usr.ID, newHash, refreshExpiry); err != nil {
+		return nil, fmt.Errorf("store refresh token: %w", err)
+	}
+
+	// Set new cookies
+	http.SetCookie(w, &http.Cookie{
+		Name:     dashboardCookieName,
+		Value:    token.AccessToken,
+		Path:     "/",
+		MaxAge:   7 * 24 * 60 * 60,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	})
+	http.SetCookie(w, &http.Cookie{
+		Name:     refreshCookieName,
+		Value:    newRaw,
+		Path:     "/",
+		MaxAge:   d.cfg.RefreshTokenTTLDays * 24 * 60 * 60,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	// Parse back the fresh claims
+	claims, err := auth.VerifyAccessToken(d.jwtSecret, token.AccessToken)
+	if err != nil {
+		return nil, fmt.Errorf("verify fresh token: %w", err)
+	}
+
+	log.Printf("Transparently refreshed JWT for user %s", usr.ID)
+	return claims, nil
 }
 
 func isWebSocketUpgrade(r *http.Request) bool {
