@@ -250,9 +250,17 @@ func (d *DashboardHandler) handleProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Determine the Host header for upstream routing.
+	// When TENANT_HOST_TEMPLATE is set (e.g. connecting via LB IP but nginx
+	// needs a real hostname), use inst.Host; otherwise use the target URL's host.
+	routeHost := target.Host
+	if inst.Host != "" {
+		routeHost = inst.Host
+	}
+
 	// Handle WebSocket upgrades via hijack+splice (httputil.ReverseProxy doesn't support them)
 	if isWebSocketUpgrade(r) {
-		d.handleWebSocketProxy(w, r, target, inst.Token, claims.Subject, claims.Email)
+		d.handleWebSocketProxy(w, r, target, routeHost, inst.Token, claims.Subject, claims.Email)
 		return
 	}
 
@@ -275,7 +283,7 @@ func (d *DashboardHandler) handleProxy(w http.ResponseWriter, r *http.Request) {
 		if d.cfg.ProxySecret != "" {
 			req.Header.Set("X-Proxy-Secret", d.cfg.ProxySecret)
 		}
-		req.Host = target.Host
+		req.Host = routeHost
 	}
 
 	// Show friendly error page if the tenant is unreachable or starting up
@@ -306,7 +314,7 @@ func (d *DashboardHandler) handleProxy(w http.ResponseWriter, r *http.Request) {
 	proxy.ServeHTTP(w, r)
 }
 
-func (d *DashboardHandler) handleWebSocketProxy(w http.ResponseWriter, r *http.Request, target *url.URL, gatewayToken, userID, userEmail string) {
+func (d *DashboardHandler) handleWebSocketProxy(w http.ResponseWriter, r *http.Request, target *url.URL, routeHost, gatewayToken, userID, userEmail string) {
 	// Determine backend address, adding default port if needed.
 	backendAddr := target.Host
 	if _, _, err := net.SplitHostPort(backendAddr); err != nil {
@@ -366,10 +374,10 @@ func (d *DashboardHandler) handleWebSocketProxy(w http.ResponseWriter, r *http.R
 		lower := strings.ToLower(key)
 		switch lower {
 		case "host":
-			reqBuf.WriteString(fmt.Sprintf("Host: %s\r\n", target.Host))
+			reqBuf.WriteString(fmt.Sprintf("Host: %s\r\n", routeHost))
 			hostWritten = true
 		case "origin":
-			reqBuf.WriteString(fmt.Sprintf("Origin: %s://%s\r\n", target.Scheme, target.Host))
+			reqBuf.WriteString(fmt.Sprintf("Origin: %s://%s\r\n", target.Scheme, routeHost))
 		default:
 			for _, v := range vals {
 				reqBuf.WriteString(fmt.Sprintf("%s: %s\r\n", key, v))
@@ -377,7 +385,7 @@ func (d *DashboardHandler) handleWebSocketProxy(w http.ResponseWriter, r *http.R
 		}
 	}
 	if !hostWritten {
-		reqBuf.WriteString(fmt.Sprintf("Host: %s\r\n", target.Host))
+		reqBuf.WriteString(fmt.Sprintf("Host: %s\r\n", routeHost))
 	}
 	reqBuf.WriteString(fmt.Sprintf("X-User-ID: %s\r\n", userID))
 	reqBuf.WriteString(fmt.Sprintf("X-User-Email: %s\r\n", userEmail))

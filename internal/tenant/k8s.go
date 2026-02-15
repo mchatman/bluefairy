@@ -21,13 +21,14 @@ import (
 // It works by querying the k8s API server for OpenClawInstance CRs
 // in the configured namespace, matching on the 'tenant' label.
 type K8sClient struct {
-	apiServer    string
-	token        string
-	namespace    string
-	tenantBaseURL string
-	httpClient   *http.Client
-	mu           sync.RWMutex
-	cache        map[string]*Instance // userID -> instance
+	apiServer          string
+	token              string
+	namespace          string
+	tenantBaseURL      string
+	tenantHostTemplate string
+	httpClient         *http.Client
+	mu                 sync.RWMutex
+	cache              map[string]*Instance // userID -> instance
 }
 
 // openClawInstance represents the relevant fields of the OpenClawInstance CR.
@@ -65,6 +66,8 @@ func NewK8sClient() (*K8sClient, error) {
 		tenantBaseURL = "http://tenant-{name}.tenants.svc.cluster.local:18789"
 	}
 
+	tenantHostTemplate := os.Getenv("TENANT_HOST_TEMPLATE")
+
 	// In-cluster config
 	apiServer := "https://kubernetes.default.svc"
 	tokenBytes, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/token")
@@ -97,7 +100,8 @@ func NewK8sClient() (*K8sClient, error) {
 		apiServer:    apiServer,
 		token:        strings.TrimSpace(string(tokenBytes)),
 		namespace:    namespace,
-		tenantBaseURL: tenantBaseURL,
+		tenantBaseURL:      tenantBaseURL,
+		tenantHostTemplate: tenantHostTemplate,
 		httpClient:   httpClient,
 		cache:        make(map[string]*Instance),
 	}
@@ -116,6 +120,13 @@ func NewK8sClient() (*K8sClient, error) {
 
 func (c *K8sClient) buildEndpoint(name string) string {
 	return strings.ReplaceAll(c.tenantBaseURL, "{name}", strings.TrimPrefix(name, "tenant-"))
+}
+
+func (c *K8sClient) buildHost(name string) string {
+	if c.tenantHostTemplate == "" {
+		return ""
+	}
+	return strings.ReplaceAll(c.tenantHostTemplate, "{name}", strings.TrimPrefix(name, "tenant-"))
 }
 
 // GetInstanceFromOrchestrator implements the same interface as Client.
@@ -203,6 +214,7 @@ func (c *K8sClient) crToInstance(cr *openClawInstance) *Instance {
 	return &Instance{
 		Name:     name,
 		Endpoint: c.buildEndpoint(name),
+		Host:     c.buildHost(name),
 		Token:    gatewayToken,
 	}
 }

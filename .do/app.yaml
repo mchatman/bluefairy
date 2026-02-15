@@ -24,6 +24,10 @@ services:
     type: SECRET
   - key: TENANT_ORCHESTRATOR_URL
     value: "https://tenant-orchestrator-qsha7.ondigitalocean.app"
+  - key: TENANT_BASE_URL
+    value: "http://24.199.73.199"
+  - key: TENANT_HOST_TEMPLATE
+    value: "{name}.internal.wareit.ai"
 
 databases:
 - name: bluefairy-db

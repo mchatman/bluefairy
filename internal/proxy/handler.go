@@ -54,6 +54,13 @@ func (h *Handler) HandleProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Determine Host header for upstream routing (when using IP-based endpoints
+	// with nginx ingress, the real hostname is needed for ingress matching).
+	routeHost := target.Host
+	if instance.Host != "" {
+		routeHost = instance.Host
+	}
+
 	// Create a reverse proxy for this specific request
 	proxy := httputil.NewSingleHostReverseProxy(target)
 
@@ -76,7 +83,7 @@ func (h *Handler) HandleProxy(w http.ResponseWriter, r *http.Request) {
 		if h.proxySecret != "" {
 			req.Header.Set("X-Proxy-Secret", h.proxySecret)
 		}
-		req.Host = target.Host
+		req.Host = routeHost
 	}
 
 	// Proxy the request
