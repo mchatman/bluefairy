@@ -43,7 +43,8 @@ func NewClient() *Client {
 	}
 }
 
-// GetOrCreateInstance gets an existing or creates a new tenant instance.
+// GetOrCreateInstance gets an existing instance or creates a new one.
+// It always tries a GET first to avoid creating duplicates on retries.
 func (c *Client) GetOrCreateInstance(ctx context.Context, userID string, token string) (*Instance, error) {
 	// Check cache first
 	c.mu.RLock()
@@ -53,8 +54,14 @@ func (c *Client) GetOrCreateInstance(ctx context.Context, userID string, token s
 	}
 	c.mu.RUnlock()
 
-	// Create new instance
-	url := fmt.Sprintf("%s/tenants/%s/instance", c.orchestratorURL, userID)
+	// Try GET first — if the instance already exists, use it
+	inst, err := c.GetInstanceFromOrchestrator(ctx, userID)
+	if err == nil && inst != nil {
+		return inst, nil
+	}
+
+	// Instance doesn't exist yet — create it
+	apiURL := fmt.Sprintf("%s/tenants/%s/instance", c.orchestratorURL, userID)
 
 	reqBody := map[string]string{
 		"gateway_token": token,
@@ -65,7 +72,7 @@ func (c *Client) GetOrCreateInstance(ctx context.Context, userID string, token s
 		return nil, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
@@ -78,24 +85,30 @@ func (c *Client) GetOrCreateInstance(ctx context.Context, userID string, token s
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("orchestrator error %d: %s", resp.StatusCode, body)
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("orchestrator error %d: %s", resp.StatusCode, respBody)
 	}
 
 	var result struct {
-		Endpoint string `json:"endpoint"`
-		Status   string `json:"status"`
+		Endpoint     string `json:"endpoint"`
+		Status       string `json:"status"`
+		GatewayToken string `json:"gateway_token"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err
 	}
 
-	// Create instance info
-	// Use the actual tenant domain for production
-	inst := &Instance{
+	// Use the token returned by the orchestrator if available,
+	// otherwise fall back to the one we sent.
+	instToken := result.GatewayToken
+	if instToken == "" {
+		instToken = token
+	}
+
+	inst = &Instance{
 		Name:     result.Endpoint,
 		Endpoint: fmt.Sprintf("https://%s.wareit.ai", result.Endpoint),
-		Token:    token,
+		Token:    instToken,
 	}
 
 	// Cache it

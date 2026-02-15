@@ -1,15 +1,11 @@
 package proxy
 
 import (
-	"crypto/rand"
-	"encoding/hex"
-	"fmt"
 	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/mchatman/bluefairy/internal/auth"
 	"github.com/mchatman/bluefairy/internal/tenant"
@@ -28,17 +24,9 @@ func NewHandler(backendURL string) (*Handler, error) {
 	}, nil
 }
 
-// generateToken creates a secure random token
-func generateToken() string {
-	bytes := make([]byte, 32)
-	if _, err := rand.Read(bytes); err != nil {
-		// Fallback to a timestamp-based token if random generation fails
-		return fmt.Sprintf("fallback-token-%d", time.Now().UnixNano())
-	}
-	return hex.EncodeToString(bytes)
-}
-
-// HandleProxy proxies authenticated requests to the user's tenant instance
+// HandleProxy proxies authenticated requests to the user's tenant instance.
+// It looks up the existing instance — it does NOT create one. Instance
+// creation only happens at signup.
 func (h *Handler) HandleProxy(w http.ResponseWriter, r *http.Request) {
 	// Get claims from context (set by auth middleware)
 	claims := auth.GetClaims(r.Context())
@@ -47,12 +35,15 @@ func (h *Handler) HandleProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get or create tenant instance for this user
-	token := generateToken() // Generate a new token if needed
-	instance, err := h.tenantClient.GetOrCreateInstance(r.Context(), claims.Subject, token)
+	// Look up existing tenant instance — never create on a proxy request
+	instance, err := h.tenantClient.GetInstanceFromOrchestrator(r.Context(), claims.Subject)
 	if err != nil {
-		log.Printf("Failed to get/create tenant instance for user %s: %v", claims.Subject, err)
-		http.Error(w, "Failed to provision instance", http.StatusServiceUnavailable)
+		log.Printf("Failed to look up tenant instance for user %s: %v", claims.Subject, err)
+		http.Error(w, "Failed to locate instance", http.StatusServiceUnavailable)
+		return
+	}
+	if instance == nil {
+		http.Error(w, "No workspace provisioned. Please log in again.", http.StatusNotFound)
 		return
 	}
 

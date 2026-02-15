@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"crypto/tls"
 	"fmt"
 	"io"
@@ -240,6 +241,31 @@ func (d *DashboardHandler) handleProxy(w http.ResponseWriter, r *http.Request) {
 		req.Host = target.Host
 	}
 
+	// Show friendly error page if the tenant is unreachable or starting up
+	proxy.ErrorHandler = func(rw http.ResponseWriter, req *http.Request, err error) {
+		log.Printf("[dashboard] proxy error for user %s: %v", claims.Subject, err)
+		if wantsHTML(req) {
+			serveWorkspaceLoading(rw)
+			return
+		}
+		http.Error(rw, `{"error":"workspace_starting","message":"Your workspace is starting up. Please retry in a few seconds."}`, http.StatusBadGateway)
+	}
+
+	proxy.ModifyResponse = func(resp *http.Response) error {
+		if resp.StatusCode == http.StatusBadGateway || resp.StatusCode == http.StatusServiceUnavailable {
+			// Intercept 502/503 from the backend and replace with friendly page
+			resp.Body.Close()
+			body := []byte(workspaceLoadingHTML)
+			resp.Body = io.NopCloser(bytes.NewReader(body))
+			resp.ContentLength = int64(len(body))
+			resp.Header.Set("Content-Length", fmt.Sprintf("%d", len(body)))
+			resp.Header.Set("Content-Type", "text/html; charset=utf-8")
+			resp.Header.Set("Retry-After", "5")
+			resp.StatusCode = http.StatusBadGateway
+		}
+		return nil
+	}
+
 	proxy.ServeHTTP(w, r)
 }
 
@@ -440,3 +466,45 @@ func isWebSocketUpgrade(r *http.Request) bool {
 	}
 	return false
 }
+
+// serveWorkspaceLoading writes the friendly "loading" page as a full response.
+func serveWorkspaceLoading(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Retry-After", "5")
+	w.WriteHeader(http.StatusBadGateway)
+	_, _ = w.Write([]byte(workspaceLoadingHTML))
+}
+
+// workspaceLoadingHTML is the friendly page shown when the tenant pod is
+// starting up or temporarily unreachable.
+var workspaceLoadingHTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Starting your workspace…</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+       background:#0a0a0f;color:#e0e0e0;display:flex;align-items:center;
+       justify-content:center;min-height:100vh;text-align:center}
+  .card{max-width:420px;padding:2.5rem}
+  h1{font-size:1.4rem;font-weight:600;margin-bottom:.75rem}
+  p{color:#888;font-size:.95rem;line-height:1.5;margin-bottom:1.5rem}
+  .spinner{width:40px;height:40px;margin:0 auto 1.5rem;
+           border:3px solid #222;border-top-color:#6c63ff;border-radius:50%;
+           animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .retry{color:#6c63ff;font-size:.85rem}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="spinner"></div>
+  <h1>Starting your workspace</h1>
+  <p>This usually takes just a few seconds. The page will refresh automatically.</p>
+  <div class="retry">Retrying…</div>
+</div>
+<script>setTimeout(function(){location.reload()},5000)</script>
+</body>
+</html>`
