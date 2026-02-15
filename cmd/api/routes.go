@@ -9,12 +9,12 @@ import (
 	"github.com/mchatman/bluefairy/internal/account"
 	"github.com/mchatman/bluefairy/internal/auth"
 	"github.com/mchatman/bluefairy/internal/proxy"
+	"github.com/mchatman/bluefairy/internal/proxy/static"
 	"github.com/mchatman/bluefairy/internal/tenant"
 	"github.com/mchatman/bluefairy/internal/user"
 )
 
 const dashboardHost = "dashboard.wareit.ai"
-const loginURL = "https://aware-web-tawny.vercel.app"
 
 func (a *App) loadRoutes() {
 	// Initialize repositories and services needed by both dashboard and API
@@ -23,11 +23,14 @@ func (a *App) loadRoutes() {
 	accountService := account.NewService(accountRepo)
 	userService := user.NewService(userRepo)
 
+	// Auth handler shared by both API routes and dashboard login
+	authHandler := auth.NewHandler(a.config, userService, accountService, a.pool)
+
 	// Dashboard proxy — served on dashboard.wareit.ai
-	dashboard := proxy.NewDashboardHandler(a.config, loginURL, a.pool, userService)
+	dashboard := proxy.NewDashboardHandler(a.config, a.pool, userService, authHandler, static.LoginHTML)
 
 	// API router — served on all other hosts
-	apiRouter := a.buildAPIRouter(userService, accountService)
+	apiRouter := a.buildAPIRouter(userService, authHandler)
 
 	// Top-level mux routes by Host header
 	router := chi.NewRouter()
@@ -56,7 +59,7 @@ func (a *App) loadRoutes() {
 	a.router = router
 }
 
-func (a *App) buildAPIRouter(userService *user.Service, accountService *account.Service) http.Handler {
+func (a *App) buildAPIRouter(userService *user.Service, authHandler *auth.Handler) http.Handler {
 	router := chi.NewRouter()
 
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
@@ -68,9 +71,6 @@ func (a *App) buildAPIRouter(userService *user.Service, accountService *account.
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
-
-	// Initialize handlers
-	authHandler := auth.NewHandler(a.config, userService, accountService, a.pool)
 
 	// Auth routes (public)
 	router.Post("/auth/signup", authHandler.Signup)

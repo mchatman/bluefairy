@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aware — Sign In</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0a0f;
+  --surface:#12121a;
+  --surface-hover:#1a1a25;
+  --border:#1e1e2e;
+  --border-focus:#6c63ff;
+  --accent:#6c63ff;
+  --accent-hover:#7b73ff;
+  --accent-pressed:#5b53e0;
+  --text:#e4e4e7;
+  --text-secondary:#71717a;
+  --text-muted:#52525b;
+  --error:#ef4444;
+  --error-bg:rgba(239,68,68,0.08);
+  --radius:10px;
+  --font:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
+}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--font);-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+body{display:flex;align-items:center;justify-content:center;padding:24px}
+
+/* Subtle grid background */
+body::before{
+  content:'';
+  position:fixed;inset:0;
+  background-image:
+    linear-gradient(rgba(108,99,255,0.03) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(108,99,255,0.03) 1px,transparent 1px);
+  background-size:64px 64px;
+  pointer-events:none;
+  z-index:0;
+}
+
+/* Glow */
+body::after{
+  content:'';
+  position:fixed;
+  top:-40%;left:50%;transform:translateX(-50%);
+  width:600px;height:600px;
+  background:radial-gradient(circle,rgba(108,99,255,0.08) 0%,transparent 70%);
+  pointer-events:none;
+  z-index:0;
+}
+
+.container{
+  position:relative;z-index:1;
+  width:100%;max-width:400px;
+}
+
+/* Brand */
+.brand{
+  text-align:center;
+  margin-bottom:40px;
+}
+.brand h1{
+  font-size:28px;
+  font-weight:700;
+  letter-spacing:-0.5px;
+  color:var(--text);
+}
+.brand p{
+  margin-top:8px;
+  font-size:14px;
+  color:var(--text-secondary);
+}
+
+/* Card */
+.card{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:16px;
+  padding:32px;
+}
+
+/* Tabs */
+.tabs{
+  display:flex;
+  gap:0;
+  margin-bottom:28px;
+  border-bottom:1px solid var(--border);
+}
+.tab{
+  flex:1;
+  padding:0 0 12px;
+  background:none;border:none;
+  font-family:var(--font);
+  font-size:14px;
+  font-weight:500;
+  color:var(--text-muted);
+  cursor:pointer;
+  position:relative;
+  transition:color 0.2s;
+}
+.tab:hover{color:var(--text-secondary)}
+.tab.active{color:var(--text)}
+.tab.active::after{
+  content:'';
+  position:absolute;
+  bottom:-1px;left:0;right:0;
+  height:2px;
+  background:var(--accent);
+  border-radius:2px 2px 0 0;
+}
+
+/* Form */
+.form{display:flex;flex-direction:column;gap:18px}
+.form[hidden]{display:none}
+
+.field{display:flex;flex-direction:column;gap:6px}
+.field label{
+  font-size:13px;
+  font-weight:500;
+  color:var(--text-secondary);
+}
+.field input{
+  width:100%;
+  padding:10px 14px;
+  background:var(--bg);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  color:var(--text);
+  font-family:var(--font);
+  font-size:14px;
+  outline:none;
+  transition:border-color 0.2s,box-shadow 0.2s;
+}
+.field input::placeholder{color:var(--text-muted)}
+.field input:focus{
+  border-color:var(--border-focus);
+  box-shadow:0 0 0 3px rgba(108,99,255,0.15);
+}
+.field input.invalid{
+  border-color:var(--error);
+  box-shadow:0 0 0 3px rgba(239,68,68,0.1);
+}
+.field .hint{
+  font-size:12px;
+  color:var(--text-muted);
+  min-height:16px;
+}
+.field .hint.err{color:var(--error)}
+
+/* Submit */
+.submit{
+  margin-top:4px;
+  width:100%;
+  padding:11px 20px;
+  background:var(--accent);
+  color:#fff;
+  border:none;
+  border-radius:var(--radius);
+  font-family:var(--font);
+  font-size:14px;
+  font-weight:600;
+  cursor:pointer;
+  transition:background 0.15s,transform 0.1s,opacity 0.2s;
+  position:relative;
+  display:flex;align-items:center;justify-content:center;
+  gap:8px;
+  min-height:42px;
+}
+.submit:hover:not(:disabled){background:var(--accent-hover)}
+.submit:active:not(:disabled){background:var(--accent-pressed);transform:scale(0.985)}
+.submit:disabled{opacity:0.7;cursor:not-allowed}
+
+/* Spinner */
+.spinner{
+  width:16px;height:16px;
+  border:2px solid rgba(255,255,255,0.3);
+  border-top-color:#fff;
+  border-radius:50%;
+  animation:spin 0.6s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Error banner */
+.error-banner{
+  margin-top:16px;
+  padding:10px 14px;
+  background:var(--error-bg);
+  border:1px solid rgba(239,68,68,0.15);
+  border-radius:var(--radius);
+  font-size:13px;
+  color:var(--error);
+  line-height:1.5;
+  display:none;
+}
+.error-banner.visible{display:block}
+
+/* Footer */
+.footer{
+  margin-top:24px;
+  text-align:center;
+  font-size:13px;
+  color:var(--text-muted);
+}
+.footer a{
+  color:var(--accent);
+  text-decoration:none;
+}
+.footer a:hover{text-decoration:underline}
+
+/* Focus visible for accessibility */
+.tab:focus-visible,
+.submit:focus-visible{
+  outline:2px solid var(--accent);
+  outline-offset:2px;
+}
+
+@media(max-width:480px){
+  .card{padding:24px;border-radius:14px}
+  .brand h1{font-size:24px}
+  .brand{margin-bottom:32px}
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="brand">
+    <h1>Aware</h1>
+    <p id="subtitle">Sign in to your workspace</p>
+  </div>
+  <div class="card">
+    <div class="tabs" role="tablist">
+      <button class="tab active" role="tab" data-mode="login" id="tab-login" aria-selected="true">Sign In</button>
+      <button class="tab" role="tab" data-mode="signup" id="tab-signup" aria-selected="false">Sign Up</button>
+    </div>
+
+    <!-- Login Form -->
+    <form class="form" id="form-login" novalidate autocomplete="on">
+      <div class="field">
+        <label for="login-email">Email</label>
+        <input type="email" id="login-email" name="email" placeholder="you@company.com" autocomplete="email" required>
+        <div class="hint" id="login-email-hint"></div>
+      </div>
+      <div class="field">
+        <label for="login-password">Password</label>
+        <input type="password" id="login-password" name="password" placeholder="••••••••••" autocomplete="current-password" required>
+        <div class="hint" id="login-password-hint"></div>
+      </div>
+      <button type="submit" class="submit" id="login-submit">
+        <span class="btn-text">Sign In</span>
+      </button>
+    </form>
+
+    <!-- Signup Form -->
+    <form class="form" id="form-signup" hidden novalidate autocomplete="on">
+      <div class="field">
+        <label for="signup-name">Display Name <span style="color:var(--text-muted);font-weight:400">(optional)</span></label>
+        <input type="text" id="signup-name" name="displayName" placeholder="Jane Smith" autocomplete="name">
+      </div>
+      <div class="field">
+        <label for="signup-email">Email</label>
+        <input type="email" id="signup-email" name="email" placeholder="you@company.com" autocomplete="email" required>
+        <div class="hint" id="signup-email-hint"></div>
+      </div>
+      <div class="field">
+        <label for="signup-password">Password</label>
+        <input type="password" id="signup-password" name="password" placeholder="Min 10 characters" autocomplete="new-password" required>
+        <div class="hint" id="signup-password-hint"></div>
+      </div>
+      <div class="field">
+        <label for="signup-confirm">Confirm Password</label>
+        <input type="password" id="signup-confirm" name="confirmPassword" placeholder="Re-enter password" autocomplete="new-password" required>
+        <div class="hint" id="signup-confirm-hint"></div>
+      </div>
+      <button type="submit" class="submit" id="signup-submit">
+        <span class="btn-text">Create Account</span>
+      </button>
+    </form>
+
+    <div class="error-banner" id="error-banner" role="alert"></div>
+  </div>
+  <div class="footer" id="footer">
+    Don't have an account? <a href="#" id="footer-link">Sign up</a>
+  </div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  var MODE='login';
+  var tabLogin=document.getElementById('tab-login');
+  var tabSignup=document.getElementById('tab-signup');
+  var formLogin=document.getElementById('form-login');
+  var formSignup=document.getElementById('form-signup');
+  var subtitle=document.getElementById('subtitle');
+  var errorBanner=document.getElementById('error-banner');
+  var footerEl=document.getElementById('footer');
+  var footerLink=document.getElementById('footer-link');
+
+  function switchMode(mode){
+    MODE=mode;
+    errorBanner.classList.remove('visible');
+    errorBanner.textContent='';
+    clearAllHints();
+
+    if(mode==='login'){
+      tabLogin.classList.add('active');tabLogin.setAttribute('aria-selected','true');
+      tabSignup.classList.remove('active');tabSignup.setAttribute('aria-selected','false');
+      formLogin.hidden=false;formSignup.hidden=true;
+      subtitle.textContent='Sign in to your workspace';
+      footerEl.innerHTML='Don\'t have an account? <a href="#" id="footer-link">Sign up</a>';
+      document.title='Aware \u2014 Sign In';
+    }else{
+      tabSignup.classList.add('active');tabSignup.setAttribute('aria-selected','true');
+      tabLogin.classList.remove('active');tabLogin.setAttribute('aria-selected','false');
+      formSignup.hidden=false;formLogin.hidden=true;
+      subtitle.textContent='Create your account';
+      footerEl.innerHTML='Already have an account? <a href="#" id="footer-link">Sign in</a>';
+      document.title='Aware \u2014 Sign Up';
+    }
+    document.getElementById('footer-link').addEventListener('click',function(e){
+      e.preventDefault();
+      switchMode(mode==='login'?'signup':'login');
+    });
+  }
+
+  tabLogin.addEventListener('click',function(){switchMode('login')});
+  tabSignup.addEventListener('click',function(){switchMode('signup')});
+  footerLink.addEventListener('click',function(e){
+    e.preventDefault();
+    switchMode('signup');
+  });
+
+  // Validation helpers
+  var emailRe=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  function setHint(id,msg){
+    var el=document.getElementById(id);
+    if(!el)return;
+    el.textContent=msg;
+    el.classList.toggle('err',!!msg);
+    // Also toggle invalid class on sibling input
+    var input=el.previousElementSibling;
+    if(input&&input.tagName==='INPUT')input.classList.toggle('invalid',!!msg);
+  }
+
+  function clearAllHints(){
+    var hints=document.querySelectorAll('.hint');
+    for(var i=0;i<hints.length;i++){
+      hints[i].textContent='';hints[i].classList.remove('err');
+    }
+    var inputs=document.querySelectorAll('input');
+    for(var j=0;j<inputs.length;j++)inputs[j].classList.remove('invalid');
+  }
+
+  function validateLogin(){
+    var ok=true;
+    var email=document.getElementById('login-email').value.trim();
+    var pass=document.getElementById('login-password').value;
+    if(!email){setHint('login-email-hint','Email is required');ok=false}
+    else if(!emailRe.test(email)){setHint('login-email-hint','Enter a valid email address');ok=false}
+    else setHint('login-email-hint','');
+    if(!pass){setHint('login-password-hint','Password is required');ok=false}
+    else if(pass.length<10){setHint('login-password-hint','Password must be at least 10 characters');ok=false}
+    else setHint('login-password-hint','');
+    return ok;
+  }
+
+  function validateSignup(){
+    var ok=true;
+    var email=document.getElementById('signup-email').value.trim();
+    var pass=document.getElementById('signup-password').value;
+    var confirm=document.getElementById('signup-confirm').value;
+    if(!email){setHint('signup-email-hint','Email is required');ok=false}
+    else if(!emailRe.test(email)){setHint('signup-email-hint','Enter a valid email address');ok=false}
+    else setHint('signup-email-hint','');
+    if(!pass){setHint('signup-password-hint','Password is required');ok=false}
+    else if(pass.length<10){setHint('signup-password-hint','Password must be at least 10 characters');ok=false}
+    else setHint('signup-password-hint','');
+    if(!confirm){setHint('signup-confirm-hint','Please confirm your password');ok=false}
+    else if(pass&&confirm!==pass){setHint('signup-confirm-hint','Passwords do not match');ok=false}
+    else setHint('signup-confirm-hint','');
+    return ok;
+  }
+
+  // Loading state
+  function setLoading(btn,loading){
+    if(loading){
+      btn.disabled=true;
+      btn.querySelector('.btn-text').style.visibility='hidden';
+      var sp=document.createElement('div');sp.className='spinner';sp.id='btn-spinner';
+      btn.appendChild(sp);
+    }else{
+      btn.disabled=false;
+      btn.querySelector('.btn-text').style.visibility='visible';
+      var old=btn.querySelector('#btn-spinner');
+      if(old)old.remove();
+    }
+  }
+
+  function showError(msg){
+    errorBanner.textContent=msg;
+    errorBanner.classList.add('visible');
+  }
+
+  function setCookie(name,value,maxAge){
+    document.cookie=name+'='+encodeURIComponent(value)+';path=/;max-age='+maxAge+';SameSite=Lax';
+  }
+
+  function handleSuccess(data){
+    setCookie('aware_dashboard',data.accessToken,604800);
+    setCookie('aware_refresh',data.refreshToken,2592000);
+    window.location.href='/';
+  }
+
+  async function submit(endpoint,body,btn){
+    setLoading(btn,true);
+    errorBanner.classList.remove('visible');
+    try{
+      var res=await fetch(endpoint,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(body)
+      });
+      var data=await res.json();
+      if(!res.ok){
+        showError(data.error||data.message||'Something went wrong. Please try again.');
+        return;
+      }
+      handleSuccess(data);
+    }catch(e){
+      showError('Network error. Please check your connection and try again.');
+    }finally{
+      setLoading(btn,false);
+    }
+  }
+
+  formLogin.addEventListener('submit',function(e){
+    e.preventDefault();
+    clearAllHints();
+    if(!validateLogin())return;
+    var email=document.getElementById('login-email').value.trim();
+    var pass=document.getElementById('login-password').value;
+    submit('/auth/login',{email:email,password:pass},document.getElementById('login-submit'));
+  });
+
+  formSignup.addEventListener('submit',function(e){
+    e.preventDefault();
+    clearAllHints();
+    if(!validateSignup())return;
+    var email=document.getElementById('signup-email').value.trim();
+    var pass=document.getElementById('signup-password').value;
+    var name=document.getElementById('signup-name').value.trim();
+    var body={email:email,password:pass};
+    if(name)body.displayName=name;
+    submit('/auth/signup',body,document.getElementById('signup-submit'));
+  });
+
+  // Clear field errors on input
+  document.querySelectorAll('input').forEach(function(inp){
+    inp.addEventListener('input',function(){
+      var hint=this.nextElementSibling;
+      if(hint&&hint.classList.contains('hint')){
+        hint.textContent='';hint.classList.remove('err');
+      }
+      this.classList.remove('invalid');
+    });
+  });
+
+})();
+</script>
+</body>
+</html>

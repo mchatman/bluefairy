@@ -28,26 +28,31 @@ const (
 
 // DashboardHandler serves the tenant proxy on dashboard.wareit.ai.
 // It handles:
-//   - /auth/callback?token=JWT  — sets cookie, redirects to /
-//   - /logout                   — clears cookie, redirects to login
+//   - /login                    — serves the login/signup page
+//   - /auth/login, /auth/signup — proxies to the auth API
+//   - /auth/refresh             — proxies to the auth API
+//   - /auth/callback?token=JWT  — sets cookies, redirects to /
+//   - /logout                   — clears cookies, shows logout page
 //   - /*                        — validates cookie, proxies to tenant
 type DashboardHandler struct {
 	cfg          *config.Config
 	jwtSecret    string
 	tenantClient *tenant.Client
-	loginURL     string // e.g. https://aware-web-tawny.vercel.app
 	refreshStore *auth.RefreshStore
 	userService  *user.Service
+	authHandler  *auth.Handler
+	loginHTML    []byte
 }
 
-func NewDashboardHandler(cfg *config.Config, loginURL string, pool *pgxpool.Pool, userService *user.Service) *DashboardHandler {
+func NewDashboardHandler(cfg *config.Config, pool *pgxpool.Pool, userService *user.Service, authHandler *auth.Handler, loginHTML []byte) *DashboardHandler {
 	return &DashboardHandler{
 		cfg:          cfg,
 		jwtSecret:    cfg.JWTSecret,
 		tenantClient: tenant.NewClient(),
-		loginURL:     loginURL,
 		refreshStore: auth.NewRefreshStore(pool),
 		userService:  userService,
+		authHandler:  authHandler,
+		loginHTML:    loginHTML,
 	}
 }
 
@@ -55,6 +60,14 @@ func (d *DashboardHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 
 	switch {
+	case path == "/login":
+		d.serveLoginPage(w, r)
+	case path == "/auth/login" && r.Method == http.MethodPost:
+		d.authHandler.Login(w, r)
+	case path == "/auth/signup" && r.Method == http.MethodPost:
+		d.authHandler.Signup(w, r)
+	case path == "/auth/refresh" && r.Method == http.MethodPost:
+		d.authHandler.Refresh(w, r)
 	case path == "/auth/callback":
 		d.handleCallback(w, r)
 	case path == "/logout":
@@ -64,10 +77,31 @@ func (d *DashboardHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// serveLoginPage serves the embedded login/signup page.
+func (d *DashboardHandler) serveLoginPage(w http.ResponseWriter, r *http.Request) {
+	// If user already has a valid session, redirect to dashboard
+	if c, err := r.Cookie(dashboardCookieName); err == nil && c.Value != "" {
+		if _, err := auth.VerifyAccessToken(d.jwtSecret, c.Value); err == nil {
+			http.Redirect(w, r, "/", http.StatusFound)
+			return
+		}
+		// JWT expired — try refresh before showing login
+		if _, err := d.tryRefresh(w, r); err == nil {
+			http.Redirect(w, r, "/", http.StatusFound)
+			return
+		}
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(d.loginHTML)
+}
+
 func (d *DashboardHandler) handleCallback(w http.ResponseWriter, r *http.Request) {
 	tokenStr := r.URL.Query().Get("token")
 	if tokenStr == "" {
-		http.Redirect(w, r, d.loginURL, http.StatusFound)
+		http.Redirect(w, r, "/login", http.StatusFound)
 		return
 	}
 
@@ -75,7 +109,7 @@ func (d *DashboardHandler) handleCallback(w http.ResponseWriter, r *http.Request
 	claims, err := auth.VerifyAccessToken(d.jwtSecret, tokenStr)
 	if err != nil {
 		log.Printf("Invalid callback token: %v", err)
-		http.Redirect(w, r, d.loginURL, http.StatusFound)
+		http.Redirect(w, r, "/login", http.StatusFound)
 		return
 	}
 
@@ -151,8 +185,8 @@ func (d *DashboardHandler) handleLogout(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	// Redirect to aware-web's logout to clear its cookie too
-	http.Redirect(w, r, d.loginURL+"/logout", http.StatusFound)
+	// Redirect to login page
+	http.Redirect(w, r, "/login", http.StatusFound)
 }
 
 func (d *DashboardHandler) clearAllCookies(w http.ResponseWriter) {
@@ -180,7 +214,7 @@ func (d *DashboardHandler) handleProxy(w http.ResponseWriter, r *http.Request) {
 	// Read JWT from cookie
 	cookie, err := r.Cookie(dashboardCookieName)
 	if err != nil || cookie.Value == "" {
-		http.Redirect(w, r, d.loginURL, http.StatusFound)
+		http.Redirect(w, r, "/login", http.StatusFound)
 		return
 	}
 
@@ -191,7 +225,7 @@ func (d *DashboardHandler) handleProxy(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			// Refresh failed — clear everything and redirect to login
 			d.clearAllCookies(w)
-			http.Redirect(w, r, d.loginURL, http.StatusFound)
+			http.Redirect(w, r, "/login", http.StatusFound)
 			return
 		}
 	}
