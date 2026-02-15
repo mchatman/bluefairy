@@ -408,9 +408,9 @@ body::after{
   }
 
   function handleSuccess(data){
-    setCookie('aware_dashboard',data.accessToken,604800);
-    setCookie('aware_refresh',data.refreshToken,2592000);
-    window.location.href='/';
+    // Redirect through /auth/callback so the server sets HttpOnly cookies
+    // and injects the gateway token for the OpenClaw SPA.
+    window.location.href='/auth/callback?token='+encodeURIComponent(data.accessToken)+'&refresh_token='+encodeURIComponent(data.refreshToken);
   }
 
   async function submit(endpoint,body,btn){
