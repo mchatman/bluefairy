@@ -139,8 +139,9 @@ func (c *Client) GetInstanceFromOrchestrator(ctx context.Context, userID string)
 	}
 
 	var result struct {
-		Endpoint string `json:"endpoint"`
-		Status   string `json:"status"`
+		Endpoint     string `json:"endpoint"`
+		Status       string `json:"status"`
+		GatewayToken string `json:"gateway_token"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err
@@ -149,6 +150,7 @@ func (c *Client) GetInstanceFromOrchestrator(ctx context.Context, userID string)
 	inst := &Instance{
 		Name:     result.Endpoint,
 		Endpoint: fmt.Sprintf("https://%s.wareit.ai", result.Endpoint),
+		Token:    result.GatewayToken,
 	}
 
 	// Cache it

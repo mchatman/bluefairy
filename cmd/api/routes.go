@@ -88,8 +88,9 @@ func (a *App) loadRoutes() {
 
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]string{
-				"endpoint": inst.Endpoint,
-				"name":     inst.Name,
+				"endpoint":      inst.Endpoint,
+				"name":          inst.Name,
+				"gateway_token": inst.Token,
 			})
 		})
 
