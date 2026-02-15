@@ -83,7 +83,7 @@ func (d *DashboardHandler) handleCallback(w http.ResponseWriter, r *http.Request
 }
 
 func (d *DashboardHandler) handleLogout(w http.ResponseWriter, r *http.Request) {
-	// Clear the cookie
+	// Clear the dashboard cookie
 	http.SetCookie(w, &http.Cookie{
 		Name:     dashboardCookieName,
 		Value:    "",
@@ -94,7 +94,8 @@ func (d *DashboardHandler) handleLogout(w http.ResponseWriter, r *http.Request) 
 		SameSite: http.SameSiteLaxMode,
 	})
 
-	http.Redirect(w, r, d.loginURL, http.StatusFound)
+	// Redirect to aware-web's logout to clear its cookie too
+	http.Redirect(w, r, d.loginURL+"/logout", http.StatusFound)
 }
 
 func (d *DashboardHandler) handleProxy(w http.ResponseWriter, r *http.Request) {
