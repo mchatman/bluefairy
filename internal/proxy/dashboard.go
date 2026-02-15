@@ -314,9 +314,14 @@ func (d *DashboardHandler) handleProxy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	proxy.ModifyResponse = func(resp *http.Response) error {
-		if resp.StatusCode == http.StatusBadGateway || resp.StatusCode == http.StatusServiceUnavailable {
-			// Intercept 502/503 from the backend and replace with friendly page.
-			// Use 200 to prevent App Platform from replacing our response.
+		// Intercept error responses from the backend (nginx ingress) and
+		// replace with a friendly loading page. This covers:
+		// - 404: ingress rule not yet created (new signup, operator still provisioning)
+		// - 502/503: pod not ready or starting up
+		// Use 200 to prevent App Platform from replacing our response.
+		if resp.StatusCode == http.StatusNotFound ||
+			resp.StatusCode == http.StatusBadGateway ||
+			resp.StatusCode == http.StatusServiceUnavailable {
 			resp.Body.Close()
 			body := []byte(workspaceLoadingHTML)
 			resp.Body = io.NopCloser(bytes.NewReader(body))
