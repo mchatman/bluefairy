@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"crypto/tls"
 	"log"
 	"net/http"
 	"net/http/httputil"
@@ -63,6 +64,17 @@ func (h *Handler) HandleProxy(w http.ResponseWriter, r *http.Request) {
 
 	// Create a reverse proxy for this specific request
 	proxy := httputil.NewSingleHostReverseProxy(target)
+
+	// When connecting via IP to an nginx ingress with a self-signed cert,
+	// skip TLS verification and set SNI for correct ingress matching.
+	if target.Scheme == "https" && instance.Host != "" {
+		proxy.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+				ServerName:         routeHost,
+			},
+		}
+	}
 
 	// Customize the director to add auth and routing
 	originalDirector := proxy.Director

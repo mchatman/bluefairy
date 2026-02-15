@@ -267,6 +267,18 @@ func (d *DashboardHandler) handleProxy(w http.ResponseWriter, r *http.Request) {
 	// Reverse proxy to the tenant
 	proxy := httputil.NewSingleHostReverseProxy(target)
 
+	// When connecting via IP to an nginx ingress with a self-signed cert,
+	// we need to skip TLS verification and set the SNI server name so
+	// the ingress matches the right rule.
+	if target.Scheme == "https" && inst.Host != "" {
+		proxy.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+				ServerName:         routeHost,
+			},
+		}
+	}
+
 	originalDirector := proxy.Director
 	proxy.Director = func(req *http.Request) {
 		originalDirector(req)
@@ -340,8 +352,16 @@ func (d *DashboardHandler) handleWebSocketProxy(w http.ResponseWriter, r *http.R
 	// Dial the backend.
 	var backendConn net.Conn
 	if target.Scheme == "https" || target.Scheme == "wss" {
-		host, _, _ := net.SplitHostPort(backendAddr)
-		backendConn, err = tls.Dial("tcp", backendAddr, &tls.Config{ServerName: host})
+		// Use routeHost for SNI so nginx ingress matches the right rule.
+		// Skip TLS verify since the ingress uses a self-signed cert.
+		sni := routeHost
+		if h, _, splitErr := net.SplitHostPort(routeHost); splitErr == nil {
+			sni = h
+		}
+		backendConn, err = tls.Dial("tcp", backendAddr, &tls.Config{
+			ServerName:         sni,
+			InsecureSkipVerify: true,
+		})
 	} else {
 		backendConn, err = net.Dial("tcp", backendAddr)
 	}
