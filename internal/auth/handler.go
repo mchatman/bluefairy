@@ -28,16 +28,16 @@ type Handler struct {
 	cfg            *config.Config
 	userService    *user.Service
 	accountService *account.Service
-	tenantClient   *tenant.Client
+	tenantClient   tenant.Resolver
 	refreshStore   *RefreshStore
 }
 
-func NewHandler(cfg *config.Config, userService *user.Service, accountService *account.Service, pool *pgxpool.Pool) *Handler {
+func NewHandler(cfg *config.Config, userService *user.Service, accountService *account.Service, pool *pgxpool.Pool, tenants tenant.Resolver) *Handler {
 	return &Handler{
 		cfg:            cfg,
 		userService:    userService,
 		accountService: accountService,
-		tenantClient:   tenant.NewClient(),
+		tenantClient:   tenants,
 		refreshStore:   NewRefreshStore(pool),
 	}
 }

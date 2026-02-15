@@ -1,36 +1,15 @@
 # Build stage
-FROM golang:1.24-alpine AS builder
-
+FROM golang:1.24-alpine AS build
 WORKDIR /app
-
-# Copy go mod files first for better caching
 COPY go.mod go.sum ./
 RUN go mod download
-
-# Copy source code
 COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags='-s -w' -o /bluefairy ./cmd/api
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -o bluefairy cmd/api/main.go cmd/api/routes.go
-
-# Production stage
-FROM alpine:latest
-
-# Install ca-certificates and curl for HTTPS requests and migrate tool
-RUN apk --no-cache add ca-certificates curl
-
-# Install migrate tool
-RUN curl -L https://github.com/golang-migrate/migrate/releases/download/v4.18.1/migrate.linux-amd64.tar.gz | tar xvz && \
-    mv migrate /usr/local/bin/migrate
-
-WORKDIR /root/
-
-# Copy the binary and migrations from the build stage
-COPY --from=builder /app/bluefairy .
-COPY --from=builder /app/migrations ./migrations
-
-# Expose port
+# Runtime stage
+FROM alpine:3.20
+RUN apk add --no-cache ca-certificates tzdata
+COPY --from=build /bluefairy /usr/local/bin/bluefairy
+COPY migrations /app/migrations
 EXPOSE 8000
-
-# Run the binary
-CMD ["./bluefairy"]
+ENTRYPOINT ["bluefairy"]

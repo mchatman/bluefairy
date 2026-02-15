@@ -1,0 +1,21 @@
+# Allow bluefairy namespace to reach tenant pods on gateway ports.
+# This is additive to the operator-managed NetworkPolicy.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-bluefairy-proxy
+  namespace: tenants
+spec:
+  podSelector: {}  # all pods in tenants namespace
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: bluefairy
+    ports:
+    - protocol: TCP
+      port: 18789
+    - protocol: TCP
+      port: 18793

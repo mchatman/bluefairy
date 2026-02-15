@@ -12,13 +12,13 @@ import (
 )
 
 type Handler struct {
-	tenantClient *tenant.Client
+	tenantClient tenant.Resolver
 	proxySecret  string
 }
 
-func NewHandler(backendURL string, proxySecret string) (*Handler, error) {
+func NewHandler(proxySecret string, tenants tenant.Resolver) (*Handler, error) {
 	return &Handler{
-		tenantClient: tenant.NewClient(),
+		tenantClient: tenants,
 		proxySecret:  proxySecret,
 	}, nil
 }

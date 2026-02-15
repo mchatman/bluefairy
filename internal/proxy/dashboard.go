@@ -37,18 +37,18 @@ const (
 type DashboardHandler struct {
 	cfg          *config.Config
 	jwtSecret    string
-	tenantClient *tenant.Client
+	tenantClient tenant.Resolver
 	refreshStore *auth.RefreshStore
 	userService  *user.Service
 	authHandler  *auth.Handler
 	loginHTML    []byte
 }
 
-func NewDashboardHandler(cfg *config.Config, pool *pgxpool.Pool, userService *user.Service, authHandler *auth.Handler, loginHTML []byte) *DashboardHandler {
+func NewDashboardHandler(cfg *config.Config, pool *pgxpool.Pool, userService *user.Service, authHandler *auth.Handler, loginHTML []byte, tenants tenant.Resolver) *DashboardHandler {
 	return &DashboardHandler{
 		cfg:          cfg,
 		jwtSecret:    cfg.JWTSecret,
-		tenantClient: tenant.NewClient(),
+		tenantClient: tenants,
 		refreshStore: auth.NewRefreshStore(pool),
 		userService:  userService,
 		authHandler:  authHandler,

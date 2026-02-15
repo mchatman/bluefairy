@@ -23,14 +23,22 @@ func (a *App) loadRoutes() {
 	accountService := account.NewService(accountRepo)
 	userService := user.NewService(userRepo)
 
+	// Create tenant resolver — tries k8s in-cluster first, falls back to HTTP orchestrator
+	var tenants tenant.Resolver
+	if k8sClient, err := tenant.NewK8sClient(); err == nil {
+		tenants = k8sClient
+	} else {
+		tenants = tenant.NewClient()
+	}
+
 	// Auth handler shared by both API routes and dashboard login
-	authHandler := auth.NewHandler(a.config, userService, accountService, a.pool)
+	authHandler := auth.NewHandler(a.config, userService, accountService, a.pool, tenants)
 
 	// Dashboard proxy — served on dashboard.wareit.ai
-	dashboard := proxy.NewDashboardHandler(a.config, a.pool, userService, authHandler, static.LoginHTML)
+	dashboard := proxy.NewDashboardHandler(a.config, a.pool, userService, authHandler, static.LoginHTML, tenants)
 
 	// API router — served on all other hosts
-	apiRouter := a.buildAPIRouter(userService, authHandler)
+	apiRouter := a.buildAPIRouter(userService, authHandler, tenants)
 
 	// Top-level mux routes by Host header
 	router := chi.NewRouter()
@@ -59,7 +67,7 @@ func (a *App) loadRoutes() {
 	a.router = router
 }
 
-func (a *App) buildAPIRouter(userService *user.Service, authHandler *auth.Handler) http.Handler {
+func (a *App) buildAPIRouter(userService *user.Service, authHandler *auth.Handler, tenants tenant.Resolver) http.Handler {
 	router := chi.NewRouter()
 
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
@@ -77,8 +85,7 @@ func (a *App) buildAPIRouter(userService *user.Service, authHandler *auth.Handle
 	router.Post("/auth/login", authHandler.Login)
 	router.Post("/auth/refresh", authHandler.Refresh)
 
-	// Initialize tenant client for instance lookups
-	tenantClient := tenant.NewClient()
+	tenantClient := tenants
 
 	// Protected routes (require authentication)
 	router.Group(func(r chi.Router) {
@@ -128,7 +135,7 @@ func (a *App) buildAPIRouter(userService *user.Service, authHandler *auth.Handle
 		})
 
 		// Proxy authenticated requests to tenant instances
-		proxyHandler, err := proxy.NewHandler("", a.config.ProxySecret)
+		proxyHandler, err := proxy.NewHandler(a.config.ProxySecret, tenants)
 		if err != nil {
 			// Log error but don't fail startup
 		} else {
