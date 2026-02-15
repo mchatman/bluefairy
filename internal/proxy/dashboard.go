@@ -53,7 +53,7 @@ func (d *DashboardHandler) handleCallback(w http.ResponseWriter, r *http.Request
 	}
 
 	// Validate the JWT
-	_, err := auth.VerifyAccessToken(d.jwtSecret, tokenStr)
+	claims, err := auth.VerifyAccessToken(d.jwtSecret, tokenStr)
 	if err != nil {
 		log.Printf("Invalid callback token: %v", err)
 		http.Redirect(w, r, d.loginURL, http.StatusFound)
@@ -71,7 +71,15 @@ func (d *DashboardHandler) handleCallback(w http.ResponseWriter, r *http.Request
 		SameSite: http.SameSiteLaxMode,
 	})
 
-	http.Redirect(w, r, "/", http.StatusFound)
+	// Look up the tenant to get the gateway token for WebSocket auth
+	inst, err := d.tenantClient.GetInstanceFromOrchestrator(r.Context(), claims.Subject)
+	if err != nil || inst == nil || inst.Token == "" {
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
+
+	// Redirect with gateway token so the OpenClaw SPA stores it for WebSocket auth
+	http.Redirect(w, r, "/?token="+inst.Token, http.StatusFound)
 }
 
 func (d *DashboardHandler) handleLogout(w http.ResponseWriter, r *http.Request) {
