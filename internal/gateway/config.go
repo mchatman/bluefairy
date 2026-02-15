@@ -1,4 +1,8 @@
-// Package gateway manages per-user OpenClaw gateway containers.
+// Package gateway is legacy/alternative runtime code for managing per-user
+// OpenClaw gateway containers via Docker or Fly.io. This package predates
+// the current Kubernetes operator approach (see internal/tenant) and is NOT
+// wired into the production routes. It is retained for reference and
+// potential future use in non-k8s deployment scenarios.
 package gateway
 
 import (

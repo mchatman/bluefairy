@@ -1,5 +1,10 @@
 package proxy
 
+// NOTE: ConnectionTracker and IdleMonitor are not currently wired into
+// the production routing (cmd/api/routes.go). They were built for the
+// legacy gateway package's per-user container lifecycle and are retained
+// for potential reuse with the k8s operator idle-scaling feature.
+
 import (
 	"context"
 	"log/slog"

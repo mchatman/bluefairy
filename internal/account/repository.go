@@ -1,3 +1,5 @@
+// Package account provides persistence and business logic for tenant accounts.
+// An account groups one or more users and holds billing metadata (Stripe IDs).
 package account
 
 import (
@@ -8,14 +10,17 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// Repository handles account persistence in PostgreSQL.
 type Repository struct {
 	db *pgxpool.Pool
 }
 
+// NewRepository creates a new account Repository backed by the given connection pool.
 func NewRepository(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
+// Account represents a tenant account that groups users and billing information.
 type Account struct {
 	ID                   string     `json:"id"`
 	Name                 string     `json:"name"`

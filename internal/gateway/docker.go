@@ -24,6 +24,8 @@ type DockerRuntime struct {
 }
 
 // NewDockerRuntime creates a DockerRuntime for the given image.
+//
+// Deprecated: Use the Kubernetes operator approach (internal/tenant) instead.
 func NewDockerRuntime(image string) *DockerRuntime {
 	return &DockerRuntime{
 		image:      image,

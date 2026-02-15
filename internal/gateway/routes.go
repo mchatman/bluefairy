@@ -13,6 +13,8 @@ import (
 
 // RegisterRoutes registers the gateway API routes on the given mux.
 // All routes require JWT authentication.
+//
+// Deprecated: Use the Kubernetes operator approach (internal/tenant) instead.
 func RegisterRoutes(mux *http.ServeMux, provisioner *Provisioner, jwtSecret string) {
 	amw := auth.Middleware(jwtSecret)
 

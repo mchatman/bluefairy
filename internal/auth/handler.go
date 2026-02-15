@@ -24,6 +24,9 @@ const (
 	maxPasswordLen = 256
 )
 
+// Handler provides HTTP handlers for authentication endpoints including
+// signup, login, and token refresh. It coordinates between the user service,
+// account service, tenant resolver, and refresh token store.
 type Handler struct {
 	cfg            *config.Config
 	userService    *user.Service
@@ -69,6 +72,9 @@ type AuthResponse struct {
 	ExpiresAt    string     `json:"expiresAt"`
 }
 
+// Signup handles POST /auth/signup. It validates the email and password,
+// creates an account and user, provisions a tenant instance, and returns
+// JWT access + refresh tokens.
 func (h *Handler) Signup(w http.ResponseWriter, r *http.Request) {
 	var req SignupRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -102,8 +108,15 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create user as owner
-	usr, err := h.userService.CreateUser(ctx, acc.ID, req.Email, req.Password, req.DisplayName, "owner")
+	// Hash the password using argon2id (the single canonical implementation)
+	passwordHash, err := HashPassword(req.Password)
+	if err != nil {
+		http.Error(w, "Failed to process password", http.StatusInternalServerError)
+		return
+	}
+
+	// Create user as owner with pre-hashed password
+	usr, err := h.userService.CreateUser(ctx, acc.ID, req.Email, passwordHash, req.DisplayName, "owner")
 	if err != nil {
 		if strings.Contains(err.Error(), "already exists") {
 			http.Error(w, "User already exists", http.StatusConflict)
@@ -118,9 +131,9 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request) {
 	instance, err := h.tenantClient.GetOrCreateInstance(ctx, usr.ID, gatewayToken)
 	if err != nil {
 		// Log but don't fail signup - instance can be created on first use
-		log.Printf("Failed to provision tenant for user %s: %v", usr.ID, err)
+		log.Printf("[auth] failed to provision tenant for user %s: %v", usr.ID, err)
 	} else {
-		log.Printf("Provisioned tenant instance %s for user %s", instance.Name, usr.ID)
+		log.Printf("[auth] provisioned tenant instance %s for user %s", instance.Name, usr.ID)
 
 		// Optionally update account with tenant instance ID
 		// This would require updating the account service to support this
@@ -138,7 +151,7 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request) {
 	refreshHash := SHA256Hash(rawRefresh)
 	refreshExpiry := time.Now().Add(time.Duration(h.cfg.RefreshTokenTTLDays) * 24 * time.Hour)
 	if err := h.refreshStore.Create(ctx, usr.ID, refreshHash, refreshExpiry); err != nil {
-		log.Printf("Failed to store refresh token for user %s: %v", usr.ID, err)
+		log.Printf("[auth] failed to store refresh token for user %s: %v", usr.ID, err)
 		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
 		return
 	}
@@ -156,6 +169,9 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
+// Login handles POST /auth/login. It verifies the user's credentials
+// (supporting both argon2id and legacy bcrypt hashes) and returns
+// JWT access + refresh tokens.
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -181,8 +197,8 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify password
-	if !h.userService.VerifyPassword(usr, req.Password) {
+	// Verify password using the canonical auth.VerifyPassword (supports both argon2id and bcrypt)
+	if !VerifyPassword(usr.PasswordHash, req.Password) {
 		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
 		return
 	}
@@ -199,7 +215,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	refreshHash := SHA256Hash(rawRefresh)
 	refreshExpiry := time.Now().Add(time.Duration(h.cfg.RefreshTokenTTLDays) * 24 * time.Hour)
 	if err := h.refreshStore.Create(ctx, usr.ID, refreshHash, refreshExpiry); err != nil {
-		log.Printf("Failed to store refresh token for user %s: %v", usr.ID, err)
+		log.Printf("[auth] failed to store refresh token for user %s: %v", usr.ID, err)
 		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
 		return
 	}
@@ -273,7 +289,7 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 	newHash := SHA256Hash(newRaw)
 	refreshExpiry := time.Now().Add(time.Duration(h.cfg.RefreshTokenTTLDays) * 24 * time.Hour)
 	if err := h.refreshStore.Create(ctx, usr.ID, newHash, refreshExpiry); err != nil {
-		log.Printf("Failed to store new refresh token for user %s: %v", usr.ID, err)
+		log.Printf("[auth] failed to store new refresh token for user %s: %v", usr.ID, err)
 		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
 		return
 	}

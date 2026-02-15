@@ -52,6 +52,8 @@ type flyEntry struct {
 }
 
 // NewFlyRuntime creates a new Fly Machines runtime.
+//
+// Deprecated: Use the Kubernetes operator approach (internal/tenant) instead.
 func NewFlyRuntime(cfg FlyConfig) *FlyRuntime {
 	return &FlyRuntime{
 		cfg:    cfg,

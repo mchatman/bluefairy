@@ -12,11 +12,17 @@ import (
 	"github.com/mchatman/bluefairy/internal/tenant"
 )
 
+// Handler is the API-side reverse proxy that forwards authenticated requests
+// to the caller's tenant instance. It is mounted behind auth middleware on
+// the /api/* and /gateway/* routes.
 type Handler struct {
 	tenantClient tenant.Resolver
 	proxySecret  string
 }
 
+// NewHandler creates a Handler that proxies requests to tenant instances
+// resolved via the given Resolver. The proxySecret is forwarded as
+// X-Proxy-Secret to tenant backends for request verification.
 func NewHandler(proxySecret string, tenants tenant.Resolver) (*Handler, error) {
 	return &Handler{
 		tenantClient: tenants,
@@ -38,7 +44,7 @@ func (h *Handler) HandleProxy(w http.ResponseWriter, r *http.Request) {
 	// Look up existing tenant instance — never create on a proxy request
 	instance, err := h.tenantClient.GetInstanceFromOrchestrator(r.Context(), claims.Subject)
 	if err != nil {
-		log.Printf("Failed to look up tenant instance for user %s: %v", claims.Subject, err)
+		log.Printf("[proxy] failed to look up tenant instance for user %s: %v", claims.Subject, err)
 		http.Error(w, "Failed to locate instance", http.StatusServiceUnavailable)
 		return
 	}
@@ -50,7 +56,7 @@ func (h *Handler) HandleProxy(w http.ResponseWriter, r *http.Request) {
 	// Parse the tenant endpoint URL
 	target, err := url.Parse(instance.Endpoint)
 	if err != nil {
-		log.Printf("Invalid tenant endpoint %s: %v", instance.Endpoint, err)
+		log.Printf("[proxy] invalid tenant endpoint %s: %v", instance.Endpoint, err)
 		http.Error(w, "Invalid tenant endpoint", http.StatusInternalServerError)
 		return
 	}

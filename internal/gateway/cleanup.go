@@ -10,6 +10,9 @@ import (
 
 // StartTokenCleanup starts a background goroutine that periodically deletes
 // expired and long-revoked refresh tokens.
+//
+// Deprecated: This is part of the legacy gateway package. Token cleanup
+// should be handled by the deployment infrastructure or a dedicated job.
 func StartTokenCleanup(ctx context.Context) {
 	go func() {
 		ticker := time.NewTicker(1 * time.Hour)

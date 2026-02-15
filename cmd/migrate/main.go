@@ -1,3 +1,4 @@
+// Package main provides a standalone CLI tool for running database migrations.
 package main
 
 import (

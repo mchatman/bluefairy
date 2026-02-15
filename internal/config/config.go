@@ -1,3 +1,5 @@
+// Package config loads and validates application configuration from
+// environment variables.
 package config
 
 import (
@@ -8,42 +10,54 @@ import (
 )
 
 // Config holds all configuration for the Go server.
-// Values are read from environment variables at startup.
+// Values are read from environment variables at startup via [Load].
 type Config struct {
-	// Database
+	// DatabaseURL is the PostgreSQL connection string (env: DATABASE_URL, required).
 	DatabaseURL string
 
-	// Auth
-	JWTSecret           string
-	AccessTokenTTL      time.Duration
+	// JWTSecret is the HMAC secret used to sign and verify access tokens (env: JWT_SECRET, required).
+	JWTSecret string
+	// AccessTokenTTL controls how long access tokens are valid (env: JWT_ACCESS_TTL_MIN, default: 15m).
+	AccessTokenTTL time.Duration
+	// RefreshTokenTTLDays controls refresh token lifetime in days (env: JWT_REFRESH_TTL_DAYS, default: 30).
 	RefreshTokenTTLDays int
 
-	// Server
+	// Port is the HTTP listen port (env: PORT, default: 8000).
 	Port int
 
-	// Gateway
-	StateRoot      string
-	GatewayImage   string
-	GatewayRuntime string // "docker" or "fly"
+	// StateRoot is the local directory for gateway state files (env: STATE_ROOT, default: /tmp/aware-data).
+	// Only used by the legacy gateway package.
+	StateRoot string
+	// GatewayImage is the Docker image for gateway containers (env: GATEWAY_IMAGE).
+	// Only used by the legacy gateway package.
+	GatewayImage string
+	// GatewayRuntime selects the container runtime: "docker" or "fly" (env: GATEWAY_RUNTIME).
+	// Only used by the legacy gateway package.
+	GatewayRuntime string
 
-	// Fly (optional, required when GatewayRuntime == "fly")
-	FlyAPIToken      string
-	FlyGatewayApp    string
-	FlyGatewayRegion string
-	FlyGatewayImage  string
-	FlyIdleTimeout   time.Duration
+	// Fly.io-specific settings (required when GatewayRuntime == "fly").
+	FlyAPIToken      string        // env: FLY_API_TOKEN
+	FlyGatewayApp    string        // env: FLY_GATEWAY_APP
+	FlyGatewayRegion string        // env: FLY_GATEWAY_REGION
+	FlyGatewayImage  string        // env: FLY_GATEWAY_IMAGE
+	FlyIdleTimeout   time.Duration // env: FLY_IDLE_TIMEOUT_SEC (default: 300s)
 
-	// Proxy
-	ProxySecret string // shared secret sent as X-Proxy-Secret header to tenant instances
+	// ProxySecret is the shared secret sent as X-Proxy-Secret to tenant instances
+	// for request verification (env: PROXY_SECRET, optional).
+	ProxySecret string
 
-	// External
-	AnthropicOAuthToken string
-	AnthropicAPIKey     string
+	// AnthropicOAuthToken and AnthropicAPIKey are passed through to tenant
+	// gateway containers as environment variables.
+	AnthropicOAuthToken string // env: ANTHROPIC_OAUTH_TOKEN
+	AnthropicAPIKey     string // env: ANTHROPIC_API_KEY
 
-	// Health
+	// HealthCheckInterval controls how often gateway health is polled (env: HEALTH_CHECK_INTERVAL_SEC, default: 30s).
 	HealthCheckInterval time.Duration
-	MaxHealthFailures   int
+	// MaxHealthFailures is the number of consecutive health check failures before
+	// a gateway is considered down (env: MAX_HEALTH_FAILURES, default: 3).
+	MaxHealthFailures int
 
+	// NodeEnv is the runtime environment label (env: NODE_ENV, default: "production").
 	NodeEnv string
 }
 

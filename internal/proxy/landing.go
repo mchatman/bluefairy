@@ -1,5 +1,9 @@
 package proxy
 
+// NOTE: LandingHandler is not currently wired into the production routing
+// (cmd/api/routes.go). It was used in an earlier architecture where the
+// landing page was served from this Go process. Retained for reference.
+
 import (
 	"net/http"
 	"strings"

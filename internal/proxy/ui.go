@@ -1,6 +1,11 @@
-// Package proxy provides reverse-proxy handlers that replace the Node.js
-// UI proxy, WebSocket proxy, and Caddy layer in the Aware Platform.
+// Package proxy provides reverse-proxy handlers for the Aware Platform,
+// including the dashboard tenant proxy, API proxy, and supporting utilities.
 package proxy
+
+// NOTE: UIProxy is not currently wired into the production routing
+// (cmd/api/routes.go). It was used in an earlier architecture where
+// /chat/* was served via this Go process with script injection.
+// Retained for reference.
 
 import (
 	"bytes"

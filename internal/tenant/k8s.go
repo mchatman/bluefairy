@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -109,7 +110,7 @@ func NewK8sClient() (*K8sClient, error) {
 	// Pre-populate cache
 	if err := client.refreshCache(context.Background()); err != nil {
 		// Log but don't fail — cache will be populated lazily
-		fmt.Printf("[k8s-tenant] initial cache refresh failed: %v\n", err)
+		log.Printf("[k8s-tenant] initial cache refresh failed: %v", err)
 	}
 
 	// Background cache refresh every 30 seconds
@@ -273,7 +274,7 @@ func (c *K8sClient) backgroundRefresh() {
 	defer ticker.Stop()
 	for range ticker.C {
 		if err := c.refreshCache(context.Background()); err != nil {
-			fmt.Printf("[k8s-tenant] cache refresh failed: %v\n", err)
+			log.Printf("[k8s-tenant] cache refresh failed: %v", err)
 		}
 	}
 }

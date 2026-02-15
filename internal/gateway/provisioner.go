@@ -62,6 +62,8 @@ type Provisioner struct {
 }
 
 // NewProvisioner creates a new Provisioner.
+//
+// Deprecated: Use the Kubernetes operator approach (internal/tenant) instead.
 func NewProvisioner(rt Runtime, stateRoot, nodeEnv, anthropicOAuthToken, anthropicAPIKey, proxySecret string, remoteRuntime bool) *Provisioner {
 	return &Provisioner{
 		runtime:             rt,

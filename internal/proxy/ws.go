@@ -1,5 +1,10 @@
 package proxy
 
+// NOTE: WSProxy is not currently wired into the production routing
+// (cmd/api/routes.go). It was built for the legacy gateway architecture
+// where WebSocket connections were routed via /gw/{userId}. The current
+// dashboard proxy handles WebSocket upgrades inline. Retained for reference.
+
 import (
 	"crypto/subtle"
 	"fmt"
