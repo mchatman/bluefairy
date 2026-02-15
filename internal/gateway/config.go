@@ -26,8 +26,9 @@ type gatewayConfig struct {
 }
 
 type gatewayAuth struct {
-	Mode  string `json:"mode"`
-	Token string `json:"token"`
+	Mode        string `json:"mode"`
+	Token       string `json:"token"`
+	ProxySecret string `json:"proxySecret,omitempty"`
 }
 
 type controlUIConfig struct {
@@ -45,22 +46,35 @@ type agentDefaults struct {
 
 // WriteAwareConfig writes the aware.json config into stateDir/.aware/.
 // Creates the directory if it doesn't exist.
-func WriteAwareConfig(stateDir string, userID, email string, port int, gatewayToken string) error {
+// If proxySecret is non-empty, the gateway will require it in the
+// X-Proxy-Secret header on all incoming requests, blocking direct access.
+func WriteAwareConfig(stateDir string, userID, email string, port int, gatewayToken, proxySecret string) error {
 	awareDir := filepath.Join(stateDir, ".aware")
 	if err := os.MkdirAll(awareDir, 0o755); err != nil {
 		return fmt.Errorf("creating .aware dir: %w", err)
+	}
+
+	// When a proxy secret is set, bind to all interfaces (VPC-reachable)
+	// instead of loopback-only. The proxy secret acts as the access control.
+	bindMode := "loopback"
+	trustedProxies := []string{"127.0.0.1", "::1"}
+	if proxySecret != "" {
+		bindMode = "all"
+		// Trust the entire 10.0.0.0/8 VPC range (Digital Ocean private networking)
+		trustedProxies = []string{"127.0.0.1", "::1", "10.0.0.0/8", "172.16.0.0/12"}
 	}
 
 	cfg := awareConfig{
 		Gateway: gatewayConfig{
 			Mode: "local",
 			Port: port,
-			Bind: "loopback",
+			Bind: bindMode,
 			Auth: gatewayAuth{
-				Mode:  "token",
-				Token: gatewayToken,
+				Mode:        "token",
+				Token:       gatewayToken,
+				ProxySecret: proxySecret,
 			},
-			TrustedProxies: []string{"127.0.0.1", "::1"},
+			TrustedProxies: trustedProxies,
 			ControlUI: controlUIConfig{
 				DangerouslyDisableDeviceAuth: true,
 				AllowedOrigins: []string{

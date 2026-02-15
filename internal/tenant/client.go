@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -15,6 +16,7 @@ import (
 // Client manages tenant instances via the tenant-orchestrator API.
 type Client struct {
 	orchestratorURL string
+	tenantBaseURL   string // e.g. "https://{name}.wareit.ai" (public) or "http://{name}.internal:18789" (VPC)
 	httpClient      *http.Client
 	mu              sync.RWMutex
 	instances       map[string]*Instance // userID -> instance info
@@ -28,19 +30,39 @@ type Instance struct {
 }
 
 // NewClient creates a new tenant orchestrator client.
+// Set TENANT_BASE_URL to control how tenant endpoints are constructed.
+// Examples:
+//   - "https://{name}.wareit.ai"      — public DNS (default, insecure)
+//   - "http://{name}.internal:18789"  — VPC-internal (recommended for DO)
+//   - "http://10.0.0.{name}:18789"   — private IP pattern
+//
+// The literal string "{name}" is replaced with the instance name from the
+// orchestrator response.
 func NewClient() *Client {
 	orchestratorURL := os.Getenv("TENANT_ORCHESTRATOR_URL")
 	if orchestratorURL == "" {
 		orchestratorURL = "http://localhost:8081"
 	}
 
+	tenantBaseURL := os.Getenv("TENANT_BASE_URL")
+	if tenantBaseURL == "" {
+		tenantBaseURL = "https://{name}.wareit.ai"
+	}
+
 	return &Client{
 		orchestratorURL: orchestratorURL,
+		tenantBaseURL:   tenantBaseURL,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
 		instances: make(map[string]*Instance),
 	}
+}
+
+// buildEndpoint constructs the tenant endpoint URL from the base URL template
+// and the instance name returned by the orchestrator.
+func (c *Client) buildEndpoint(name string) string {
+	return strings.ReplaceAll(c.tenantBaseURL, "{name}", name)
 }
 
 // GetOrCreateInstance gets an existing instance or creates a new one.
@@ -107,7 +129,7 @@ func (c *Client) GetOrCreateInstance(ctx context.Context, userID string, token s
 
 	inst = &Instance{
 		Name:     result.Endpoint,
-		Endpoint: fmt.Sprintf("https://%s.wareit.ai", result.Endpoint),
+		Endpoint: c.buildEndpoint(result.Endpoint),
 		Token:    instToken,
 	}
 
@@ -162,7 +184,7 @@ func (c *Client) GetInstanceFromOrchestrator(ctx context.Context, userID string)
 
 	inst := &Instance{
 		Name:     result.Endpoint,
-		Endpoint: fmt.Sprintf("https://%s.wareit.ai", result.Endpoint),
+		Endpoint: c.buildEndpoint(result.Endpoint),
 		Token:    result.GatewayToken,
 	}
 

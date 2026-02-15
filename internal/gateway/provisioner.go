@@ -55,19 +55,21 @@ type Provisioner struct {
 	nodeEnv             string
 	anthropicOAuthToken string
 	anthropicAPIKey     string
-	remoteRuntime       bool // true for Fly (no local state dir needed)
+	proxySecret         string // shared secret for X-Proxy-Secret header validation
+	remoteRuntime       bool   // true for Fly (no local state dir needed)
 	mu                  sync.Mutex
 	locks               map[string]chan struct{}
 }
 
 // NewProvisioner creates a new Provisioner.
-func NewProvisioner(rt Runtime, stateRoot, nodeEnv, anthropicOAuthToken, anthropicAPIKey string, remoteRuntime bool) *Provisioner {
+func NewProvisioner(rt Runtime, stateRoot, nodeEnv, anthropicOAuthToken, anthropicAPIKey, proxySecret string, remoteRuntime bool) *Provisioner {
 	return &Provisioner{
 		runtime:             rt,
 		stateRoot:           stateRoot,
 		nodeEnv:             nodeEnv,
 		anthropicOAuthToken: anthropicOAuthToken,
 		anthropicAPIKey:     anthropicAPIKey,
+		proxySecret:         proxySecret,
 		remoteRuntime:       remoteRuntime,
 		locks:               make(map[string]chan struct{}),
 	}
@@ -254,7 +256,7 @@ func (p *Provisioner) Provision(ctx context.Context, userID, email string) (*Pro
 		if err := os.MkdirAll(newStateDir, 0o755); err != nil {
 			return nil, fmt.Errorf("creating state dir: %w", err)
 		}
-		if err := WriteAwareConfig(newStateDir, userID, email, newPort, newToken); err != nil {
+		if err := WriteAwareConfig(newStateDir, userID, email, newPort, newToken, p.proxySecret); err != nil {
 			return nil, fmt.Errorf("writing config: %w", err)
 		}
 	}
@@ -283,6 +285,9 @@ func (p *Provisioner) Provision(ctx context.Context, userID, email string) (*Pro
 	}
 	if p.anthropicAPIKey != "" {
 		envVars["ANTHROPIC_API_KEY"] = p.anthropicAPIKey
+	}
+	if p.proxySecret != "" {
+		envVars["PROXY_SECRET"] = p.proxySecret
 	}
 
 	// 6. Start the container
