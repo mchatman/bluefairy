@@ -13,14 +13,13 @@ import (
 
 type Handler struct {
 	tenantClient *tenant.Client
+	proxySecret  string
 }
 
-func NewHandler(backendURL string) (*Handler, error) {
-	// backendURL parameter kept for backwards compatibility but ignored
-	// We now use tenant orchestrator to manage instances
-
+func NewHandler(backendURL string, proxySecret string) (*Handler, error) {
 	return &Handler{
 		tenantClient: tenant.NewClient(),
+		proxySecret:  proxySecret,
 	}, nil
 }
 
@@ -74,6 +73,9 @@ func (h *Handler) HandleProxy(w http.ResponseWriter, r *http.Request) {
 		// Add user context as headers for the backend
 		req.Header.Set("X-User-ID", claims.Subject)
 		req.Header.Set("X-User-Email", claims.Email)
+		if h.proxySecret != "" {
+			req.Header.Set("X-Proxy-Secret", h.proxySecret)
+		}
 		req.Host = target.Host
 	}
 

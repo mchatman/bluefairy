@@ -128,7 +128,7 @@ func (a *App) buildAPIRouter(userService *user.Service, authHandler *auth.Handle
 		})
 
 		// Proxy authenticated requests to tenant instances
-		proxyHandler, err := proxy.NewHandler("")
+		proxyHandler, err := proxy.NewHandler("", a.config.ProxySecret)
 		if err != nil {
 			// Log error but don't fail startup
 		} else {

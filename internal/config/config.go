@@ -33,6 +33,9 @@ type Config struct {
 	FlyGatewayImage  string
 	FlyIdleTimeout   time.Duration
 
+	// Proxy
+	ProxySecret string // shared secret sent as X-Proxy-Secret header to tenant instances
+
 	// External
 	AnthropicOAuthToken string
 	AnthropicAPIKey     string
@@ -100,6 +103,9 @@ func Load() (*Config, error) {
 	flyGatewayImage := optional("FLY_GATEWAY_IMAGE", "")
 	flyIdleTimeoutSec := optionalInt("FLY_IDLE_TIMEOUT_SEC", 300)
 
+	// Proxy
+	proxySecret := optional("PROXY_SECRET", "")
+
 	// External
 	anthropicOAuthToken := optional("ANTHROPIC_OAUTH_TOKEN", "")
 	anthropicAPIKey := optional("ANTHROPIC_API_KEY", "")
@@ -150,6 +156,7 @@ func Load() (*Config, error) {
 		FlyGatewayRegion:    flyGatewayRegion,
 		FlyGatewayImage:     flyGatewayImage,
 		FlyIdleTimeout:      time.Duration(flyIdleTimeoutSec) * time.Second,
+		ProxySecret:         proxySecret,
 		AnthropicOAuthToken: anthropicOAuthToken,
 		AnthropicAPIKey:     anthropicAPIKey,
 		HealthCheckInterval: time.Duration(healthCheckSec) * time.Second,

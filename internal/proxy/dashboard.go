@@ -272,6 +272,9 @@ func (d *DashboardHandler) handleProxy(w http.ResponseWriter, r *http.Request) {
 
 		req.Header.Set("X-User-ID", claims.Subject)
 		req.Header.Set("X-User-Email", claims.Email)
+		if d.cfg.ProxySecret != "" {
+			req.Header.Set("X-Proxy-Secret", d.cfg.ProxySecret)
+		}
 		req.Host = target.Host
 	}
 
@@ -378,6 +381,9 @@ func (d *DashboardHandler) handleWebSocketProxy(w http.ResponseWriter, r *http.R
 	}
 	reqBuf.WriteString(fmt.Sprintf("X-User-ID: %s\r\n", userID))
 	reqBuf.WriteString(fmt.Sprintf("X-User-Email: %s\r\n", userEmail))
+	if d.cfg.ProxySecret != "" {
+		reqBuf.WriteString(fmt.Sprintf("X-Proxy-Secret: %s\r\n", d.cfg.ProxySecret))
+	}
 	reqBuf.WriteString("\r\n")
 
 	// Send the upgrade request to the backend.
