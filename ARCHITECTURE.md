@@ -2,7 +2,7 @@
 
 ## What It Is
 
-Bluefairy is the control plane for **Aware** (wareit.ai), a multi-tenant SaaS that gives each user their own isolated AI workspace. It handles authentication, account management, tenant orchestration, and (temporarily) reverse-proxying to tenant instances.
+Bluefairy is the control plane for **Aware** (wareit.ai), a multi-tenant SaaS that gives each user their own isolated AI workspace. It handles authentication, account management, tenant provisioning, and (temporarily) reverse-proxying to tenant instances.
 
 ## The Big Picture
 
@@ -24,7 +24,7 @@ Bluefairy is the control plane for **Aware** (wareit.ai), a multi-tenant SaaS th
                     ▼             ▼                   ▼
               ┌──────────┐ ┌───────────────┐ ┌──────────────┐
               │PostgreSQL│ │tenant-         │ │  DOKS (k8s)  │
-              │  (PG 16) │ │orchestrator   │ │              │
+              │  (PG 16) │ │provisioner   │ │              │
               │          │ │(DO App Platf.)│ │ nginx ingress│
               │accounts  │ │               │ │      │       │
               │users     │ │Manages k8s    │ │ ┌────▼─────┐ │
@@ -49,13 +49,13 @@ Bluefairy is the control plane for **Aware** (wareit.ai), a multi-tenant SaaS th
 ### Signup
 1. Creates account + user in Postgres
 2. Calls tenant-provisioner to provision an OpenClaw instance
-3. Orchestrator creates an OpenClawInstance CRD in k8s
+3. Provisioner creates an OpenClawInstance CRD in k8s
 4. Returns JWT + refresh token
 
 ### Dashboard Proxy (temporary)
 1. Request hits `dashboard.wareit.ai/*`
 2. JWT validated from cookie; transparent refresh if expired
-3. Tenant instance looked up via orchestrator API
+3. Tenant instance looked up via provisioner API
 4. Request reverse-proxied to `http://{name}.wareit.ai`
 5. Gateway token injected as `?token=` query param
 6. WebSocket upgrades handled via TCP hijack+splice
@@ -71,7 +71,7 @@ HTTP API. It never talks to Kubernetes directly.
 - `GET /tenants/{userID}/instance` — lookup
 - `POST /tenants/{userID}/instance` — provision (signup only)
 
-The orchestrator returns an instance name (e.g. `tenant-1c9de7b5`),
+The provisioner returns an instance name (e.g. `tenant-1c9de7b5`),
 which bluefairy expands to a URL via the `TENANT_BASE_URL` template:
 `http://{name}.wareit.ai`
 
@@ -84,7 +84,7 @@ Required vars fail fast — the app won't start without them.
 |---|---|---|
 | `DATABASE_URL` | Yes | PostgreSQL connection string |
 | `JWT_SECRET` | Yes | HMAC secret for JWT signing |
-| `TENANT_ORCHESTRATOR_URL` | Yes | Tenant orchestrator API base URL |
+| `TENANT_PROVISIONER_URL` | Yes | Tenant provisioner API base URL |
 | `TENANT_BASE_URL` | Yes | URL template, e.g. `http://{name}.wareit.ai` |
 | `PORT` | No (8000) | HTTP listen port |
 | `PROXY_SECRET` | No | Shared secret for tenant request verification |

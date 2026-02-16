@@ -22,7 +22,7 @@ services:
   - key: JWT_SECRET
     value: "your-production-jwt-secret"
     type: SECRET
-  - key: TENANT_ORCHESTRATOR_URL
+  - key: TENANT_PROVISIONER_URL
     value: "https://tenant-orchestrator-qsha7.ondigitalocean.app"
   - key: TENANT_BASE_URL
     value: "http://{name}.wareit.ai"

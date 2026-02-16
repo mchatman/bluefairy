@@ -25,9 +25,9 @@ type Config struct {
 	// Port is the HTTP listen port (env: PORT, default: 8000).
 	Port int
 
-	// TenantOrchestratorURL is the base URL of the tenant-provisioner API
-	// (env: TENANT_ORCHESTRATOR_URL, required).
-	TenantOrchestratorURL string
+	// TenantProvisionerURL is the base URL of the tenant-provisioner API
+	// (env: TENANT_PROVISIONER_URL, required).
+	TenantProvisionerURL string
 
 	// TenantBaseURL is the URL template for connecting to tenant instances.
 	// The literal "{name}" is replaced with the instance name.
@@ -87,7 +87,7 @@ func Load() (*Config, error) {
 	// Required
 	databaseURL := required("DATABASE_URL")
 	jwtSecret := required("JWT_SECRET")
-	tenantOrchestratorURL := required("TENANT_ORCHESTRATOR_URL")
+	tenantProvisionerURL := required("TENANT_PROVISIONER_URL")
 	tenantBaseURL := required("TENANT_BASE_URL")
 
 	// Server
@@ -117,7 +117,7 @@ func Load() (*Config, error) {
 	return &Config{
 		DatabaseURL:           databaseURL,
 		JWTSecret:             jwtSecret,
-		TenantOrchestratorURL: tenantOrchestratorURL,
+		TenantProvisionerURL: tenantProvisionerURL,
 		TenantBaseURL:         tenantBaseURL,
 		AccessTokenTTL:      time.Duration(accessTTLMin) * time.Minute,
 		RefreshTokenTTLDays: refreshTTLDays,

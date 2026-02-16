@@ -15,7 +15,7 @@ import (
 
 // Instance represents a running tenant workspace.
 type Instance struct {
-	// Name is the instance identifier returned by the orchestrator (e.g. "tenant-1c9de7b5").
+	// Name is the instance identifier returned by the provisioner (e.g. "tenant-1c9de7b5").
 	Name string
 
 	// Endpoint is the URL used to connect to the tenant
@@ -27,9 +27,9 @@ type Instance struct {
 	Token string
 }
 
-// orchestratorResponse is the JSON envelope returned by the tenant-provisioner
+// provisionerResponse is the JSON envelope returned by the tenant-provisioner
 // API for instance operations.
-type orchestratorResponse struct {
+type provisionerResponse struct {
 	Name         string `json:"name"`
 	Endpoint     string `json:"endpoint"`
 	Status       string `json:"status"`
@@ -38,18 +38,18 @@ type orchestratorResponse struct {
 
 // Client manages tenant instances via the tenant-provisioner API.
 type Client struct {
-	orchestratorURL string
+	provisionerURL string
 	tenantBaseURL   string // e.g. "http://{name}.wareit.ai"
 	httpClient      *http.Client
 }
 
-// NewClient creates a new tenant orchestrator client.
-// orchestratorURL is the base URL of the tenant-provisioner API.
+// NewClient creates a new tenant provisioner client.
+// provisionerURL is the base URL of the tenant-provisioner API.
 // tenantBaseURL is the URL template for tenant endpoints; the literal
 // string "{name}" is replaced with the instance name.
-func NewClient(orchestratorURL, tenantBaseURL string) *Client {
+func NewClient(provisionerURL, tenantBaseURL string) *Client {
 	return &Client{
-		orchestratorURL: orchestratorURL,
+		provisionerURL: provisionerURL,
 		tenantBaseURL:   tenantBaseURL,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
@@ -58,7 +58,7 @@ func NewClient(orchestratorURL, tenantBaseURL string) *Client {
 }
 
 // buildEndpoint constructs the tenant endpoint URL from the base URL template
-// and the instance name returned by the orchestrator.
+// and the instance name returned by the provisioner.
 func (c *Client) buildEndpoint(name string) string {
 	return strings.ReplaceAll(c.tenantBaseURL, "{name}", name)
 }
@@ -73,7 +73,7 @@ func (c *Client) CreateInstance(ctx context.Context, userID string, token string
 	}
 
 	// Instance doesn't exist yet — create it
-	apiURL := fmt.Sprintf("%s/tenants/%s/instance", c.orchestratorURL, userID)
+	apiURL := fmt.Sprintf("%s/tenants/%s/instance", c.provisionerURL, userID)
 
 	reqBody := map[string]string{
 		"gateway_token": token,
@@ -98,15 +98,15 @@ func (c *Client) CreateInstance(ctx context.Context, userID string, token string
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("orchestrator error %d: %s", resp.StatusCode, respBody)
+		return nil, fmt.Errorf("provisioner error %d: %s", resp.StatusCode, respBody)
 	}
 
-	var result orchestratorResponse
+	var result provisionerResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err
 	}
 
-	// Use the token returned by the orchestrator if available,
+	// Use the token returned by the provisioner if available,
 	// otherwise fall back to the one we sent.
 	instToken := result.GatewayToken
 	if instToken == "" {
@@ -122,7 +122,7 @@ func (c *Client) CreateInstance(ctx context.Context, userID string, token string
 
 // GetInstance looks up an instance via the tenant-provisioner API.
 func (c *Client) GetInstance(ctx context.Context, userID string) (*Instance, error) {
-	url := fmt.Sprintf("%s/tenants/%s/instance", c.orchestratorURL, userID)
+	url := fmt.Sprintf("%s/tenants/%s/instance", c.provisionerURL, userID)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -141,10 +141,10 @@ func (c *Client) GetInstance(ctx context.Context, userID string) (*Instance, err
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("orchestrator error %d: %s", resp.StatusCode, body)
+		return nil, fmt.Errorf("provisioner error %d: %s", resp.StatusCode, body)
 	}
 
-	var result orchestratorResponse
+	var result provisionerResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err
 	}
