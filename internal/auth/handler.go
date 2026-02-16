@@ -1,16 +1,15 @@
 package auth
 
 import (
-	"crypto/rand"
-	"encoding/hex"
+	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"regexp"
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/mchatman/bluefairy/internal/account"
 	"github.com/mchatman/bluefairy/internal/config"
 	"github.com/mchatman/bluefairy/internal/tenant"
@@ -35,23 +34,14 @@ type Handler struct {
 	refreshStore   *RefreshStore
 }
 
-func NewHandler(cfg *config.Config, userService *user.Service, accountService *account.Service, pool *pgxpool.Pool, tenants tenant.Resolver) *Handler {
+func NewHandler(cfg *config.Config, userService *user.Service, accountService *account.Service, refreshStore *RefreshStore, tenants tenant.Resolver) *Handler {
 	return &Handler{
 		cfg:            cfg,
 		userService:    userService,
 		accountService: accountService,
 		tenantClient:   tenants,
-		refreshStore:   NewRefreshStore(pool),
+		refreshStore:   refreshStore,
 	}
-}
-
-// generateToken creates a secure random token
-func generateToken() string {
-	bytes := make([]byte, 32)
-	if _, err := rand.Read(bytes); err != nil {
-		return "fallback-token-signup"
-	}
-	return hex.EncodeToString(bytes)
 }
 
 type SignupRequest struct {
@@ -72,6 +62,67 @@ type AuthResponse struct {
 	ExpiresAt    string     `json:"expiresAt"`
 }
 
+// TokenPairResult holds the raw tokens returned by issueTokenPair.
+type TokenPairResult struct {
+	AccessToken  string
+	RefreshToken string
+	ExpiresAt    time.Time
+}
+
+// issueTokenPair creates a new access + refresh token pair for the given user,
+// stores the refresh token hash, and returns both raw tokens.
+func (h *Handler) issueTokenPair(ctx context.Context, usr *user.User) (*TokenPairResult, error) {
+	token, err := SignAccessToken(h.cfg.JWTSecret, usr.ID, usr.Email, "free", h.cfg.AccessTokenTTL)
+	if err != nil {
+		return nil, fmt.Errorf("signing access token: %w", err)
+	}
+
+	rawRefresh := GenerateOpaqueToken()
+	refreshHash := SHA256Hash(rawRefresh)
+	refreshExpiry := time.Now().Add(time.Duration(h.cfg.RefreshTokenTTLDays) * 24 * time.Hour)
+	if err := h.refreshStore.Create(ctx, usr.ID, refreshHash, refreshExpiry); err != nil {
+		return nil, fmt.Errorf("storing refresh token: %w", err)
+	}
+
+	return &TokenPairResult{
+		AccessToken:  token.AccessToken,
+		RefreshToken: rawRefresh,
+		ExpiresAt:    token.ExpiresAt,
+	}, nil
+}
+
+// RefreshForUser validates and rotates a raw refresh token, then issues a new
+// access + refresh token pair. Used by both the /auth/refresh endpoint and the
+// dashboard's transparent cookie refresh.
+func (h *Handler) RefreshForUser(ctx context.Context, rawRefresh string) (*user.User, *TokenPairResult, error) {
+	oldHash := SHA256Hash(rawRefresh)
+
+	userID, err := h.refreshStore.Validate(ctx, oldHash)
+	if err != nil {
+		return nil, nil, fmt.Errorf("invalid or expired refresh token")
+	}
+
+	// Revoke old token (rotation)
+	_ = h.refreshStore.Revoke(ctx, oldHash)
+
+	usr, err := h.userService.GetUser(ctx, userID)
+	if err != nil || usr == nil {
+		return nil, nil, fmt.Errorf("user not found")
+	}
+
+	tokens, err := h.issueTokenPair(ctx, usr)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return usr, tokens, nil
+}
+
+// RevokeAllTokens revokes all refresh tokens for a user (e.g. on logout).
+func (h *Handler) RevokeAllTokens(ctx context.Context, userID string) error {
+	return h.refreshStore.RevokeAllForUser(ctx, userID)
+}
+
 // Signup handles POST /auth/signup. It validates the email and password,
 // creates an account and user, provisions a tenant instance, and returns
 // JWT access + refresh tokens.
@@ -82,13 +133,11 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate email
 	if req.Email == "" || !emailRE.MatchString(req.Email) {
 		http.Error(w, "Invalid email", http.StatusBadRequest)
 		return
 	}
 
-	// Validate password
 	if len(req.Password) < minPasswordLen || len(req.Password) > maxPasswordLen {
 		http.Error(w, "Password must be between 10 and 256 characters", http.StatusBadRequest)
 		return
@@ -96,7 +145,6 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	// Create account (use email or display name as account name)
 	accountName := req.Email
 	if req.DisplayName != nil && *req.DisplayName != "" {
 		accountName = *req.DisplayName
@@ -108,14 +156,12 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Hash the password using argon2id (the single canonical implementation)
 	passwordHash, err := HashPassword(req.Password)
 	if err != nil {
 		http.Error(w, "Failed to process password", http.StatusInternalServerError)
 		return
 	}
 
-	// Create user as owner with pre-hashed password
 	usr, err := h.userService.CreateUser(ctx, acc.ID, req.Email, passwordHash, req.DisplayName, "owner")
 	if err != nil {
 		if strings.Contains(err.Error(), "already exists") {
@@ -126,47 +172,29 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Provision tenant instance for the new user
-	gatewayToken := generateToken()
-	instance, err := h.tenantClient.CreateInstance(ctx, usr.ID, gatewayToken)
-	if err != nil {
-		// Log but don't fail signup - instance can be created on first use
+	// Provision tenant instance (non-blocking — signup succeeds even if this fails)
+	gatewayToken := GenerateOpaqueToken()
+	if instance, err := h.tenantClient.CreateInstance(ctx, usr.ID, gatewayToken); err != nil {
 		log.Printf("[auth] failed to provision tenant for user %s: %v", usr.ID, err)
 	} else {
 		log.Printf("[auth] provisioned tenant instance %s for user %s", instance.Name, usr.ID)
-
-		// Optionally update account with tenant instance ID
-		// This would require updating the account service to support this
 	}
 
-	// Generate JWT token
-	token, err := SignAccessToken(h.cfg.JWTSecret, usr.ID, usr.Email, "free", h.cfg.AccessTokenTTL)
+	tokens, err := h.issueTokenPair(ctx, usr)
 	if err != nil {
+		log.Printf("[auth] failed to issue tokens for user %s: %v", usr.ID, err)
 		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
 		return
-	}
-
-	// Generate refresh token
-	rawRefresh := GenerateOpaqueToken()
-	refreshHash := SHA256Hash(rawRefresh)
-	refreshExpiry := time.Now().Add(time.Duration(h.cfg.RefreshTokenTTLDays) * 24 * time.Hour)
-	if err := h.refreshStore.Create(ctx, usr.ID, refreshHash, refreshExpiry); err != nil {
-		log.Printf("[auth] failed to store refresh token for user %s: %v", usr.ID, err)
-		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
-		return
-	}
-
-	// Return response
-	resp := AuthResponse{
-		User:         usr,
-		AccessToken:  token.AccessToken,
-		RefreshToken: rawRefresh,
-		ExpiresAt:    token.ExpiresAt.Format(time.RFC3339),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(AuthResponse{
+		User:         usr,
+		AccessToken:  tokens.AccessToken,
+		RefreshToken: tokens.RefreshToken,
+		ExpiresAt:    tokens.ExpiresAt.Format(time.RFC3339),
+	})
 }
 
 // Login handles POST /auth/login. It verifies the user's credentials
@@ -186,7 +214,6 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	// Get user
 	usr, err := h.userService.GetUserByEmail(ctx, req.Email)
 	if err != nil {
 		http.Error(w, "Internal error", http.StatusInternalServerError)
@@ -197,40 +224,27 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify password using the canonical auth.VerifyPassword (supports both argon2id and bcrypt)
 	if !VerifyPassword(usr.PasswordHash, req.Password) {
 		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
 		return
 	}
 
-	// Generate JWT token
-	token, err := SignAccessToken(h.cfg.JWTSecret, usr.ID, usr.Email, "free", h.cfg.AccessTokenTTL)
+	tokens, err := h.issueTokenPair(ctx, usr)
 	if err != nil {
+		log.Printf("[auth] failed to issue tokens for user %s: %v", usr.ID, err)
 		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
 		return
-	}
-
-	// Generate refresh token
-	rawRefresh := GenerateOpaqueToken()
-	refreshHash := SHA256Hash(rawRefresh)
-	refreshExpiry := time.Now().Add(time.Duration(h.cfg.RefreshTokenTTLDays) * 24 * time.Hour)
-	if err := h.refreshStore.Create(ctx, usr.ID, refreshHash, refreshExpiry); err != nil {
-		log.Printf("[auth] failed to store refresh token for user %s: %v", usr.ID, err)
-		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
-		return
-	}
-
-	// Return response
-	resp := AuthResponse{
-		User:         usr,
-		AccessToken:  token.AccessToken,
-		RefreshToken: rawRefresh,
-		ExpiresAt:    token.ExpiresAt.Format(time.RFC3339),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(AuthResponse{
+		User:         usr,
+		AccessToken:  tokens.AccessToken,
+		RefreshToken: tokens.RefreshToken,
+		ExpiresAt:    tokens.ExpiresAt.Format(time.RFC3339),
+	})
 }
+
 const refreshCookieName = "aware_refresh"
 
 type RefreshRequest struct {
@@ -240,8 +254,6 @@ type RefreshRequest struct {
 // Refresh handles token rotation: validates the old refresh token, revokes it,
 // and issues a new access + refresh token pair.
 func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
 	// Read refresh token from cookie first, then fall back to request body
 	var rawRefresh string
 	if c, err := r.Cookie(refreshCookieName); err == nil && c.Value != "" {
@@ -258,49 +270,17 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	oldHash := SHA256Hash(rawRefresh)
-
-	// Validate the refresh token
-	userID, err := h.refreshStore.Validate(ctx, oldHash)
+	usr, tokens, err := h.RefreshForUser(r.Context(), rawRefresh)
 	if err != nil {
 		http.Error(w, "Invalid or expired refresh token", http.StatusUnauthorized)
 		return
 	}
 
-	// Revoke old refresh token (rotation)
-	_ = h.refreshStore.Revoke(ctx, oldHash)
-
-	// Look up user to get email / tier
-	usr, err := h.userService.GetUser(ctx, userID)
-	if err != nil || usr == nil {
-		http.Error(w, "User not found", http.StatusUnauthorized)
-		return
-	}
-
-	// Issue new access token
-	token, err := SignAccessToken(h.cfg.JWTSecret, usr.ID, usr.Email, "free", h.cfg.AccessTokenTTL)
-	if err != nil {
-		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
-		return
-	}
-
-	// Issue new refresh token
-	newRaw := GenerateOpaqueToken()
-	newHash := SHA256Hash(newRaw)
-	refreshExpiry := time.Now().Add(time.Duration(h.cfg.RefreshTokenTTLDays) * 24 * time.Hour)
-	if err := h.refreshStore.Create(ctx, usr.ID, newHash, refreshExpiry); err != nil {
-		log.Printf("[auth] failed to store new refresh token for user %s: %v", usr.ID, err)
-		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
-		return
-	}
-
-	resp := AuthResponse{
-		User:         usr,
-		AccessToken:  token.AccessToken,
-		RefreshToken: newRaw,
-		ExpiresAt:    token.ExpiresAt.Format(time.RFC3339),
-	}
-
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(AuthResponse{
+		User:         usr,
+		AccessToken:  tokens.AccessToken,
+		RefreshToken: tokens.RefreshToken,
+		ExpiresAt:    tokens.ExpiresAt.Format(time.RFC3339),
+	})
 }

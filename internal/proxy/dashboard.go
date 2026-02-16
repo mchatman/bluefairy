@@ -12,14 +12,11 @@ import (
 	"net/url"
 	"strings"
 	"sync"
-	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/mchatman/bluefairy/internal/auth"
 	"github.com/mchatman/bluefairy/internal/config"
 	"github.com/mchatman/bluefairy/internal/proxy/static"
 	"github.com/mchatman/bluefairy/internal/tenant"
-	"github.com/mchatman/bluefairy/internal/user"
 )
 
 // DashboardHandler serves the tenant proxy on dashboard.wareit.ai.
@@ -34,21 +31,17 @@ type DashboardHandler struct {
 	cfg          *config.Config
 	jwtSecret    string
 	tenantClient tenant.Resolver
-	refreshStore *auth.RefreshStore
-	userService  *user.Service
 	authHandler  *auth.Handler
 	loginHTML    []byte
 }
 
 // NewDashboardHandler creates a DashboardHandler that serves the tenant dashboard UI.
 // The loginHTML parameter should be the embedded login page (typically static.LoginHTML).
-func NewDashboardHandler(cfg *config.Config, pool *pgxpool.Pool, userService *user.Service, authHandler *auth.Handler, loginHTML []byte, tenants tenant.Resolver) *DashboardHandler {
+func NewDashboardHandler(cfg *config.Config, authHandler *auth.Handler, loginHTML []byte, tenants tenant.Resolver) *DashboardHandler {
 	return &DashboardHandler{
 		cfg:          cfg,
 		jwtSecret:    cfg.JWTSecret,
 		tenantClient: tenants,
-		refreshStore: auth.NewRefreshStore(pool),
-		userService:  userService,
 		authHandler:  authHandler,
 		loginHTML:    loginHTML,
 	}
@@ -171,15 +164,14 @@ func (d *DashboardHandler) handleLogout(w http.ResponseWriter, r *http.Request) 
 
 	// Revoke all refresh tokens for the user if we can identify them
 	if c, err := r.Cookie(DashboardCookieName); err == nil && c.Value != "" {
-		// Try to parse claims even from an expired JWT to get the user ID
 		if claims, err := auth.VerifyAccessToken(d.jwtSecret, c.Value); err == nil {
-			_ = d.refreshStore.RevokeAllForUser(r.Context(), claims.Subject)
+			_ = d.authHandler.RevokeAllTokens(r.Context(), claims.Subject)
 		}
 	}
 	if c, err := r.Cookie(RefreshCookieName); err == nil && c.Value != "" {
-		tokenHash := auth.SHA256Hash(c.Value)
-		if userID, err := d.refreshStore.Validate(r.Context(), tokenHash); err == nil {
-			_ = d.refreshStore.RevokeAllForUser(r.Context(), userID)
+		// If we couldn't get the user from the JWT, try via refresh token rotation
+		if usr, _, err := d.authHandler.RefreshForUser(r.Context(), c.Value); err == nil {
+			_ = d.authHandler.RevokeAllTokens(r.Context(), usr.ID)
 		}
 	}
 
@@ -473,42 +465,15 @@ func (d *DashboardHandler) tryRefresh(w http.ResponseWriter, r *http.Request) (*
 		return nil, fmt.Errorf("no refresh cookie")
 	}
 
-	ctx := r.Context()
-	oldHash := auth.SHA256Hash(rc.Value)
-
-	// Validate old refresh token
-	userID, err := d.refreshStore.Validate(ctx, oldHash)
+	usr, tokens, err := d.authHandler.RefreshForUser(r.Context(), rc.Value)
 	if err != nil {
-		return nil, fmt.Errorf("invalid refresh token: %w", err)
-	}
-
-	// Revoke old refresh token (rotation)
-	_ = d.refreshStore.Revoke(ctx, oldHash)
-
-	// Look up the user
-	usr, err := d.userService.GetUser(ctx, userID)
-	if err != nil || usr == nil {
-		return nil, fmt.Errorf("user lookup failed")
-	}
-
-	// Issue new JWT
-	token, err := auth.SignAccessToken(d.jwtSecret, usr.ID, usr.Email, "free", d.cfg.AccessTokenTTL)
-	if err != nil {
-		return nil, fmt.Errorf("sign access token: %w", err)
-	}
-
-	// Issue new refresh token
-	newRaw := auth.GenerateOpaqueToken()
-	newHash := auth.SHA256Hash(newRaw)
-	refreshExpiry := time.Now().Add(time.Duration(d.cfg.RefreshTokenTTLDays) * 24 * time.Hour)
-	if err := d.refreshStore.Create(ctx, usr.ID, newHash, refreshExpiry); err != nil {
-		return nil, fmt.Errorf("store refresh token: %w", err)
+		return nil, fmt.Errorf("refresh failed: %w", err)
 	}
 
 	// Set new cookies
 	http.SetCookie(w, &http.Cookie{
 		Name:     DashboardCookieName,
-		Value:    token.AccessToken,
+		Value:    tokens.AccessToken,
 		Path:     "/",
 		MaxAge:   7 * 24 * 60 * 60,
 		HttpOnly: true,
@@ -517,7 +482,7 @@ func (d *DashboardHandler) tryRefresh(w http.ResponseWriter, r *http.Request) (*
 	})
 	http.SetCookie(w, &http.Cookie{
 		Name:     RefreshCookieName,
-		Value:    newRaw,
+		Value:    tokens.RefreshToken,
 		Path:     "/",
 		MaxAge:   d.cfg.RefreshTokenTTLDays * 24 * 60 * 60,
 		HttpOnly: true,
@@ -525,8 +490,7 @@ func (d *DashboardHandler) tryRefresh(w http.ResponseWriter, r *http.Request) (*
 		SameSite: http.SameSiteLaxMode,
 	})
 
-	// Parse back the fresh claims
-	claims, err := auth.VerifyAccessToken(d.jwtSecret, token.AccessToken)
+	claims, err := auth.VerifyAccessToken(d.jwtSecret, tokens.AccessToken)
 	if err != nil {
 		return nil, fmt.Errorf("verify fresh token: %w", err)
 	}
