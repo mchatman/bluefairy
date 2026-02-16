@@ -1,8 +1,5 @@
-// Package tenant provides client interfaces for looking up and provisioning
-// per-user tenant instances. Two implementations are available:
-//   - K8sClient reads OpenClawInstance custom resources directly from the
-//     Kubernetes API (preferred when running in-cluster).
-//   - Client communicates with the tenant-orchestrator HTTP API.
+// Package tenant provides a client for looking up and provisioning per-user
+// tenant instances via the tenant-orchestrator HTTP API.
 package tenant
 
 import "context"

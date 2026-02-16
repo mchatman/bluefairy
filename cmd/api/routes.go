@@ -24,13 +24,8 @@ func (a *App) loadRoutes() {
 	accountService := account.NewService(accountRepo)
 	userService := user.NewService(userRepo)
 
-	// Create tenant resolver — tries k8s in-cluster first, falls back to HTTP orchestrator
-	var tenants tenant.Resolver
-	if k8sClient, err := tenant.NewK8sClient(); err == nil {
-		tenants = k8sClient
-	} else {
-		tenants = tenant.NewClient()
-	}
+	// Tenant resolver — always goes through the tenant-orchestrator API
+	tenants := tenant.NewClient()
 
 	// Refresh store created once and shared by all auth consumers
 	repo := auth.NewRepository(a.pool)
