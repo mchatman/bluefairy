@@ -1,5 +1,5 @@
 // Package tenant provides a client for looking up and provisioning per-user
-// tenant instances via the tenant-orchestrator HTTP API.
+// tenant instances via the tenant-provisioner HTTP API.
 package tenant
 
 import (
@@ -27,7 +27,7 @@ type Instance struct {
 	Token string
 }
 
-// orchestratorResponse is the JSON envelope returned by the tenant-orchestrator
+// orchestratorResponse is the JSON envelope returned by the tenant-provisioner
 // API for instance operations.
 type orchestratorResponse struct {
 	Name         string `json:"name"`
@@ -36,7 +36,7 @@ type orchestratorResponse struct {
 	GatewayToken string `json:"gateway_token"`
 }
 
-// Client manages tenant instances via the tenant-orchestrator API.
+// Client manages tenant instances via the tenant-provisioner API.
 type Client struct {
 	orchestratorURL string
 	tenantBaseURL   string // e.g. "http://{name}.wareit.ai"
@@ -44,7 +44,7 @@ type Client struct {
 }
 
 // NewClient creates a new tenant orchestrator client.
-// orchestratorURL is the base URL of the tenant-orchestrator API.
+// orchestratorURL is the base URL of the tenant-provisioner API.
 // tenantBaseURL is the URL template for tenant endpoints; the literal
 // string "{name}" is replaced with the instance name.
 func NewClient(orchestratorURL, tenantBaseURL string) *Client {
@@ -92,7 +92,7 @@ func (c *Client) CreateInstance(ctx context.Context, userID string, token string
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("calling tenant-orchestrator: %w", err)
+		return nil, fmt.Errorf("calling tenant-provisioner: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -120,7 +120,7 @@ func (c *Client) CreateInstance(ctx context.Context, userID string, token string
 	}, nil
 }
 
-// GetInstance looks up an instance via the tenant-orchestrator API.
+// GetInstance looks up an instance via the tenant-provisioner API.
 func (c *Client) GetInstance(ctx context.Context, userID string) (*Instance, error) {
 	url := fmt.Sprintf("%s/tenants/%s/instance", c.orchestratorURL, userID)
 
@@ -131,7 +131,7 @@ func (c *Client) GetInstance(ctx context.Context, userID string) (*Instance, err
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("calling tenant-orchestrator: %w", err)
+		return nil, fmt.Errorf("calling tenant-provisioner: %w", err)
 	}
 	defer resp.Body.Close()
 

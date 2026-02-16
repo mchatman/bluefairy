@@ -48,7 +48,7 @@ Bluefairy is the control plane for **Aware** (wareit.ai), a multi-tenant SaaS th
 
 ### Signup
 1. Creates account + user in Postgres
-2. Calls tenant-orchestrator to provision an OpenClaw instance
+2. Calls tenant-provisioner to provision an OpenClaw instance
 3. Orchestrator creates an OpenClawInstance CRD in k8s
 4. Returns JWT + refresh token
 
@@ -65,7 +65,7 @@ Bluefairy is the control plane for **Aware** (wareit.ai), a multi-tenant SaaS th
 
 ## Tenant Resolution
 
-Bluefairy resolves tenant instances by calling the tenant-orchestrator
+Bluefairy resolves tenant instances by calling the tenant-provisioner
 HTTP API. It never talks to Kubernetes directly.
 
 - `GET /tenants/{userID}/instance` — lookup
@@ -109,7 +109,7 @@ internal/
     reverse.go         Shared reverse proxy builder
     websocket.go       WebSocket hijack+splice
     static/            Embedded HTML (login, loading — will be replaced by aware-web)
-  tenant/              HTTP client for tenant-orchestrator API
+  tenant/              HTTP client for tenant-provisioner API
   user/                User repository + service
 
 migrations/            SQL migration files (golang-migrate)

@@ -25,7 +25,7 @@ type Config struct {
 	// Port is the HTTP listen port (env: PORT, default: 8000).
 	Port int
 
-	// TenantOrchestratorURL is the base URL of the tenant-orchestrator API
+	// TenantOrchestratorURL is the base URL of the tenant-provisioner API
 	// (env: TENANT_ORCHESTRATOR_URL, required).
 	TenantOrchestratorURL string
 
