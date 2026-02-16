@@ -13,14 +13,22 @@ import (
 	"time"
 )
 
+const cacheTTL = 2 * time.Minute
+
+// cachedInstance pairs an Instance with its cache insertion time.
+type cachedInstance struct {
+	inst      *Instance
+	fetchedAt time.Time
+}
+
 // Client manages tenant instances via the tenant-orchestrator API.
 type Client struct {
-	orchestratorURL   string
-	tenantBaseURL     string // e.g. "https://{name}.wareit.ai" or "http://24.199.73.199"
+	orchestratorURL    string
+	tenantBaseURL      string // e.g. "https://{name}.wareit.ai" or "http://24.199.73.199"
 	tenantHostTemplate string // e.g. "{name}.internal.wareit.ai" — for Host header routing when using IP-based base URL
-	httpClient        *http.Client
-	mu                sync.RWMutex
-	instances         map[string]*Instance // userID -> instance info
+	httpClient         *http.Client
+	mu                 sync.RWMutex
+	cache              map[string]*cachedInstance // userID -> instance + timestamp
 }
 
 // NewClient creates a new tenant orchestrator client.
@@ -55,7 +63,7 @@ func NewClient() *Client {
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
-		instances: make(map[string]*Instance),
+		cache: make(map[string]*cachedInstance),
 	}
 }
 
@@ -134,23 +142,15 @@ func (c *Client) CreateInstance(ctx context.Context, userID string, token string
 		Token:    instToken,
 	}
 
-	// Cache it
-	c.mu.Lock()
-	c.instances[userID] = inst
-	c.mu.Unlock()
-
+	c.cacheSet(userID, inst)
 	return inst, nil
 }
 
 // GetInstance looks up an instance via the tenant-orchestrator API.
 func (c *Client) GetInstance(ctx context.Context, userID string) (*Instance, error) {
-	// Check cache first
-	c.mu.RLock()
-	if inst, ok := c.instances[userID]; ok {
-		c.mu.RUnlock()
+	if inst := c.cacheGet(userID); inst != nil {
 		return inst, nil
 	}
-	c.mu.RUnlock()
 
 	url := fmt.Sprintf("%s/tenants/%s/instance", c.orchestratorURL, userID)
 
@@ -190,10 +190,21 @@ func (c *Client) GetInstance(ctx context.Context, userID string) (*Instance, err
 		Token:    result.GatewayToken,
 	}
 
-	// Cache it
-	c.mu.Lock()
-	c.instances[userID] = inst
-	c.mu.Unlock()
-
+	c.cacheSet(userID, inst)
 	return inst, nil
+}
+
+func (c *Client) cacheGet(userID string) *Instance {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if entry, ok := c.cache[userID]; ok && time.Since(entry.fetchedAt) < cacheTTL {
+		return entry.inst
+	}
+	return nil
+}
+
+func (c *Client) cacheSet(userID string, inst *Instance) {
+	c.mu.Lock()
+	c.cache[userID] = &cachedInstance{inst: inst, fetchedAt: time.Now()}
+	c.mu.Unlock()
 }
