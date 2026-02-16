@@ -86,7 +86,7 @@ func (h *Handler) HandleWorkspace(w http.ResponseWriter, r *http.Request) {
 		http.SetCookie(w, &http.Cookie{
 			Name:     "token",
 			Value:    tokenParam,
-			Path:     "/workspace/",
+			Path:     "/",
 			MaxAge:   15 * 60, // 15 min (matches JWT TTL)
 			HttpOnly: true,
 			Secure:   true,
