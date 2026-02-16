@@ -74,7 +74,25 @@ func (h *Handler) HandleProxy(w http.ResponseWriter, r *http.Request) {
 // parameter, or "token" cookie. The query-param path is needed because the
 // iframe is on a different origin (dashboard.wareit.ai) and can't send
 // cookies to api.wareit.ai.
+//
+// On the first request (authenticated via ?token= query param), a session
+// cookie is set so that subsequent requests (asset loads, XHR, WebSocket)
+// within the iframe are also authenticated without needing the token in
+// every URL.
 func (h *Handler) HandleWorkspace(w http.ResponseWriter, r *http.Request) {
+	// If authenticated via query param, set a cookie for subsequent requests.
+	if tokenParam := r.URL.Query().Get("token"); tokenParam != "" {
+		http.SetCookie(w, &http.Cookie{
+			Name:     "token",
+			Value:    tokenParam,
+			Path:     "/workspace/",
+			MaxAge:   15 * 60, // 15 min (matches JWT TTL)
+			HttpOnly: true,
+			Secure:   true,
+			SameSite: http.SameSiteNoneMode,
+		})
+	}
+
 	claims := auth.GetClaims(r.Context())
 	if claims == nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
