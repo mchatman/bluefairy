@@ -147,6 +147,9 @@ func (a *App) buildAPIRouter(userService *user.Service, authHandler *auth.Handle
 		} else {
 			r.HandleFunc("/api/*", proxyHandler.HandleProxy)
 			r.HandleFunc("/gateway/*", proxyHandler.HandleProxy)
+			// Workspace proxy — serves the tenant UI in an iframe from aware-web.
+			// Auth is via ?token=JWT query param since the iframe is cross-origin.
+			r.HandleFunc("/workspace/*", proxyHandler.HandleWorkspace)
 		}
 	})
 
