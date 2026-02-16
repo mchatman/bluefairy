@@ -58,7 +58,6 @@ func (h *Handler) HandleProxy(w http.ResponseWriter, r *http.Request) {
 	proxy := newTenantProxy(proxyOpts{
 		Target:      target,
 		Instance:    instance,
-		RouteHost:   routeHost(target, instance),
 		UserID:      claims.Subject,
 		UserEmail:   claims.Email,
 		ProxySecret: h.proxySecret,

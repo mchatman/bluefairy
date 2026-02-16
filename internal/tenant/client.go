@@ -23,12 +23,11 @@ type cachedInstance struct {
 
 // Client manages tenant instances via the tenant-orchestrator API.
 type Client struct {
-	orchestratorURL    string
-	tenantBaseURL      string // e.g. "https://{name}.wareit.ai" or "http://24.199.73.199"
-	tenantHostTemplate string // e.g. "{name}.internal.wareit.ai" — for Host header routing when using IP-based base URL
-	httpClient         *http.Client
-	mu                 sync.RWMutex
-	cache              map[string]*cachedInstance // userID -> instance + timestamp
+	orchestratorURL string
+	tenantBaseURL   string // e.g. "http://{name}.wareit.ai"
+	httpClient      *http.Client
+	mu              sync.RWMutex
+	cache           map[string]*cachedInstance // userID -> instance + timestamp
 }
 
 // NewClient creates a new tenant orchestrator client.
@@ -48,18 +47,12 @@ func NewClient() *Client {
 
 	tenantBaseURL := os.Getenv("TENANT_BASE_URL")
 	if tenantBaseURL == "" {
-		tenantBaseURL = "https://{name}.wareit.ai"
+		tenantBaseURL = "http://{name}.wareit.ai"
 	}
 
-	// TENANT_HOST_TEMPLATE is used when TENANT_BASE_URL points to a raw IP
-	// (e.g. http://24.199.73.199) and nginx ingress needs a real hostname in
-	// the Host header for routing. Example: "{name}.internal.wareit.ai"
-	tenantHostTemplate := os.Getenv("TENANT_HOST_TEMPLATE")
-
 	return &Client{
-		orchestratorURL:    orchestratorURL,
-		tenantBaseURL:      tenantBaseURL,
-		tenantHostTemplate: tenantHostTemplate,
+		orchestratorURL: orchestratorURL,
+		tenantBaseURL:   tenantBaseURL,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -71,14 +64,6 @@ func NewClient() *Client {
 // and the instance name returned by the orchestrator.
 func (c *Client) buildEndpoint(name string) string {
 	return strings.ReplaceAll(c.tenantBaseURL, "{name}", name)
-}
-
-// buildHost returns the hostname for the Host header, or empty if no template.
-func (c *Client) buildHost(name string) string {
-	if c.tenantHostTemplate == "" {
-		return ""
-	}
-	return strings.ReplaceAll(c.tenantHostTemplate, "{name}", name)
 }
 
 // CreateInstance provisions a new instance for the user.
@@ -138,7 +123,6 @@ func (c *Client) CreateInstance(ctx context.Context, userID string, token string
 	inst = &Instance{
 		Name:     result.Endpoint,
 		Endpoint: c.buildEndpoint(result.Endpoint),
-		Host:     c.buildHost(result.Endpoint),
 		Token:    instToken,
 	}
 
@@ -186,7 +170,6 @@ func (c *Client) GetInstance(ctx context.Context, userID string) (*Instance, err
 	inst := &Instance{
 		Name:     result.Endpoint,
 		Endpoint: c.buildEndpoint(result.Endpoint),
-		Host:     c.buildHost(result.Endpoint),
 		Token:    result.GatewayToken,
 	}
 

@@ -236,11 +236,9 @@ func (d *DashboardHandler) handleProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	host := routeHost(target, inst)
-
 	// Handle WebSocket upgrades via hijack+splice (httputil.ReverseProxy doesn't support them)
 	if isWebSocketUpgrade(r) {
-		proxyWebSocket(w, r, target, host, inst.Token, claims.Subject, claims.Email, d.cfg.ProxySecret)
+		proxyWebSocket(w, r, target, target.Host, inst.Token, claims.Subject, claims.Email, d.cfg.ProxySecret)
 		return
 	}
 
@@ -248,7 +246,6 @@ func (d *DashboardHandler) handleProxy(w http.ResponseWriter, r *http.Request) {
 	proxy := newTenantProxy(proxyOpts{
 		Target:      target,
 		Instance:    inst,
-		RouteHost:   host,
 		UserID:      claims.Subject,
 		UserEmail:   claims.Email,
 		ProxySecret: d.cfg.ProxySecret,

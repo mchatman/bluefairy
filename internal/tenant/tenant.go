@@ -23,14 +23,8 @@ type Instance struct {
 	Name string
 
 	// Endpoint is the URL used to connect to the tenant
-	// (e.g. "http://24.199.73.199" or "http://tenant-1c9de7b5.internal.wareit.ai").
+	// (e.g. "http://tenant-1c9de7b5.wareit.ai").
 	Endpoint string
-
-	// Host is the hostname sent in the Host header for upstream routing.
-	// When the Endpoint is an IP address and nginx ingress needs a real
-	// hostname for matching, this field is populated from TENANT_HOST_TEMPLATE.
-	// Empty means the Endpoint host should be used directly.
-	Host string
 
 	// Token is the gateway authentication token passed to the tenant instance
 	// as a query parameter or header.

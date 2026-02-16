@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"crypto/tls"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -14,7 +13,6 @@ import (
 type proxyOpts struct {
 	Target      *url.URL
 	Instance    *tenant.Instance
-	RouteHost   string
 	UserID      string
 	UserEmail   string
 	ProxySecret string
@@ -24,20 +22,9 @@ type proxyOpts struct {
 
 // newTenantProxy creates a pre-configured httputil.ReverseProxy that forwards
 // requests to a tenant instance with gateway token injection, user headers,
-// and correct Host header routing.
+// and correct Host header.
 func newTenantProxy(opts proxyOpts) *httputil.ReverseProxy {
 	proxy := httputil.NewSingleHostReverseProxy(opts.Target)
-
-	// When connecting via IP to an nginx ingress with a self-signed cert,
-	// skip TLS verification and set SNI for correct ingress matching.
-	if opts.Target.Scheme == "https" && opts.Instance.Host != "" {
-		proxy.Transport = &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
-				ServerName:         opts.RouteHost,
-			},
-		}
-	}
 
 	originalDirector := proxy.Director
 	proxy.Director = func(req *http.Request) {
@@ -58,18 +45,8 @@ func newTenantProxy(opts proxyOpts) *httputil.ReverseProxy {
 		if opts.ProxySecret != "" {
 			req.Header.Set("X-Proxy-Secret", opts.ProxySecret)
 		}
-		req.Host = opts.RouteHost
+		req.Host = opts.Target.Host
 	}
 
 	return proxy
-}
-
-// routeHost returns the hostname to use for upstream routing.
-// When TENANT_HOST_TEMPLATE is set, inst.Host takes precedence over the
-// target URL's host.
-func routeHost(target *url.URL, inst *tenant.Instance) string {
-	if inst.Host != "" {
-		return inst.Host
-	}
-	return target.Host
 }
