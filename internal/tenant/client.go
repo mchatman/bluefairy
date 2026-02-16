@@ -96,7 +96,7 @@ func (c *Client) CreateInstance(ctx context.Context, userID string, token string
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		respBody, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("provisioner error %d: %s", resp.StatusCode, respBody)
 	}
