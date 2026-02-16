@@ -25,7 +25,7 @@ services:
   - key: TENANT_PROVISIONER_URL
     value: "https://tenant-provisioner-65mj2.ondigitalocean.app"
   - key: TENANT_BASE_URL
-    value: "http://{name}.wareit.ai"
+    value: "https://{name}.wareit.ai"
 
 databases:
 - name: bluefairy-db
