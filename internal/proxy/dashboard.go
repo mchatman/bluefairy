@@ -535,6 +535,11 @@ func (d *DashboardHandler) tryRefresh(w http.ResponseWriter, r *http.Request) (*
 	return claims, nil
 }
 
+// wantsHTML returns true if the request prefers an HTML response.
+func wantsHTML(r *http.Request) bool {
+	return strings.Contains(r.Header.Get("Accept"), "text/html")
+}
+
 func isWebSocketUpgrade(r *http.Request) bool {
 	for _, v := range r.Header["Connection"] {
 		if strings.EqualFold(strings.TrimSpace(v), "upgrade") {
