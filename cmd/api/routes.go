@@ -71,7 +71,7 @@ func stripPort(hostPort string) string {
 	return host
 }
 
-func (a *App) buildAPIRouter(userService *user.Service, authHandler *auth.Handler, tenants tenant.Resolver) http.Handler {
+func (a *App) buildAPIRouter(userService *user.Service, authHandler *auth.Handler, tenants *tenant.Client) http.Handler {
 	router := chi.NewRouter()
 
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {

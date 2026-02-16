@@ -30,11 +30,11 @@ type Handler struct {
 	cfg            *config.Config
 	userService    *user.Service
 	accountService *account.Service
-	tenantClient   tenant.Resolver
+	tenantClient   *tenant.Client
 	repo   *Repository
 }
 
-func NewHandler(cfg *config.Config, userService *user.Service, accountService *account.Service, repo *Repository, tenants tenant.Resolver) *Handler {
+func NewHandler(cfg *config.Config, userService *user.Service, accountService *account.Service, repo *Repository, tenants *tenant.Client) *Handler {
 	return &Handler{
 		cfg:            cfg,
 		userService:    userService,

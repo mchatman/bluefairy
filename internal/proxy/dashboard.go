@@ -26,14 +26,14 @@ import (
 type DashboardHandler struct {
 	cfg          *config.Config
 	jwtSecret    string
-	tenantClient tenant.Resolver
+	tenantClient *tenant.Client
 	authHandler  *auth.Handler
 	loginHTML    []byte
 }
 
 // NewDashboardHandler creates a DashboardHandler that serves the tenant dashboard UI.
 // The loginHTML parameter should be the embedded login page (typically static.LoginHTML).
-func NewDashboardHandler(cfg *config.Config, authHandler *auth.Handler, loginHTML []byte, tenants tenant.Resolver) *DashboardHandler {
+func NewDashboardHandler(cfg *config.Config, authHandler *auth.Handler, loginHTML []byte, tenants *tenant.Client) *DashboardHandler {
 	return &DashboardHandler{
 		cfg:          cfg,
 		jwtSecret:    cfg.JWTSecret,

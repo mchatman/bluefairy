@@ -13,14 +13,14 @@ import (
 // to the caller's tenant instance. It is mounted behind auth middleware on
 // the /api/* and /gateway/* routes.
 type Handler struct {
-	tenantClient tenant.Resolver
+	tenantClient *tenant.Client
 	proxySecret  string
 }
 
 // NewHandler creates a Handler that proxies requests to tenant instances
 // resolved via the given Resolver. The proxySecret is forwarded as
 // X-Proxy-Secret to tenant backends for request verification.
-func NewHandler(proxySecret string, tenants tenant.Resolver) (*Handler, error) {
+func NewHandler(proxySecret string, tenants *tenant.Client) (*Handler, error) {
 	return &Handler{
 		tenantClient: tenants,
 		proxySecret:  proxySecret,

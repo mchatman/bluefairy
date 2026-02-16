@@ -1,3 +1,5 @@
+// Package tenant provides a client for looking up and provisioning per-user
+// tenant instances via the tenant-orchestrator HTTP API.
 package tenant
 
 import (
@@ -18,6 +20,20 @@ const cacheTTL = 2 * time.Minute
 type cachedInstance struct {
 	inst      *Instance
 	fetchedAt time.Time
+}
+
+// Instance represents a running tenant workspace.
+type Instance struct {
+	// Name is the instance identifier returned by the orchestrator (e.g. "tenant-1c9de7b5").
+	Name string
+
+	// Endpoint is the URL used to connect to the tenant
+	// (e.g. "http://tenant-1c9de7b5.wareit.ai").
+	Endpoint string
+
+	// Token is the gateway authentication token passed to the tenant instance
+	// as a query parameter or header.
+	Token string
 }
 
 // orchestratorResponse is the JSON envelope returned by the tenant-orchestrator
