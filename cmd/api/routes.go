@@ -92,7 +92,7 @@ func (a *App) buildAPIRouter(userService *user.Service, authHandler *auth.Handle
 	// Auth routes (public)
 	router.Post("/auth/signup", authHandler.Signup)
 	router.Post("/auth/login", authHandler.Login)
-	router.Post("/auth/refresh", authHandler.HandleRefresh)
+	router.Post("/auth/refresh", authHandler.HandleRefreshToken)
 
 	tenantClient := tenants
 
