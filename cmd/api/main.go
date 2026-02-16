@@ -89,17 +89,16 @@ func main() {
 	}
 
 	ctx := context.Background()
-	if err := db.Connect(ctx, cfg.DatabaseURL); err != nil {
+	pool, err := db.Connect(ctx, cfg.DatabaseURL)
+	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
-	defer db.Close()
+	defer pool.Close()
 
 	// Run database migrations
 	if err := migrate.RunMigrations(cfg.DatabaseURL); err != nil {
 		log.Fatalf("Failed to run migrations: %v", err)
 	}
-
-	pool := db.Pool()
 	app := New(cfg, pool)
 
 	if err := app.Start(context.Background()); err != nil {
