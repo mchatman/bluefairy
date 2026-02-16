@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -31,25 +30,10 @@ type Client struct {
 }
 
 // NewClient creates a new tenant orchestrator client.
-// Set TENANT_BASE_URL to control how tenant endpoints are constructed.
-// Examples:
-//   - "https://{name}.wareit.ai"      — public DNS (default, insecure)
-//   - "http://{name}.internal:18789"  — VPC-internal (recommended for DO)
-//   - "http://10.0.0.{name}:18789"   — private IP pattern
-//
-// The literal string "{name}" is replaced with the instance name from the
-// orchestrator response.
-func NewClient() *Client {
-	orchestratorURL := os.Getenv("TENANT_ORCHESTRATOR_URL")
-	if orchestratorURL == "" {
-		orchestratorURL = "http://localhost:8081"
-	}
-
-	tenantBaseURL := os.Getenv("TENANT_BASE_URL")
-	if tenantBaseURL == "" {
-		tenantBaseURL = "http://{name}.wareit.ai"
-	}
-
+// orchestratorURL is the base URL of the tenant-orchestrator API.
+// tenantBaseURL is the URL template for tenant endpoints; the literal
+// string "{name}" is replaced with the instance name.
+func NewClient(orchestratorURL, tenantBaseURL string) *Client {
 	return &Client{
 		orchestratorURL: orchestratorURL,
 		tenantBaseURL:   tenantBaseURL,

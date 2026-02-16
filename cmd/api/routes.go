@@ -25,7 +25,7 @@ func (a *App) loadRoutes() {
 	userService := user.NewService(userRepo)
 
 	// Tenant resolver — always goes through the tenant-orchestrator API
-	tenants := tenant.NewClient()
+	tenants := tenant.NewClient(a.config.TenantOrchestratorURL, a.config.TenantBaseURL)
 
 	// Refresh store created once and shared by all auth consumers
 	repo := auth.NewRepository(a.pool)

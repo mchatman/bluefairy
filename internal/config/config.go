@@ -25,6 +25,15 @@ type Config struct {
 	// Port is the HTTP listen port (env: PORT, default: 8000).
 	Port int
 
+	// TenantOrchestratorURL is the base URL of the tenant-orchestrator API
+	// (env: TENANT_ORCHESTRATOR_URL, required).
+	TenantOrchestratorURL string
+
+	// TenantBaseURL is the URL template for connecting to tenant instances.
+	// The literal "{name}" is replaced with the instance name.
+	// Example: "http://{name}.wareit.ai" (env: TENANT_BASE_URL, required).
+	TenantBaseURL string
+
 	// ProxySecret is the shared secret sent as X-Proxy-Secret to tenant instances
 	// for request verification (env: PROXY_SECRET, optional).
 	ProxySecret string
@@ -74,6 +83,8 @@ func Load() (*Config, error) {
 	// Required
 	databaseURL := required("DATABASE_URL")
 	jwtSecret := required("JWT_SECRET")
+	tenantOrchestratorURL := required("TENANT_ORCHESTRATOR_URL")
+	tenantBaseURL := required("TENANT_BASE_URL")
 
 	// Server
 	port := optionalInt("PORT", 8000)
@@ -97,8 +108,10 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-		DatabaseURL:         databaseURL,
-		JWTSecret:           jwtSecret,
+		DatabaseURL:           databaseURL,
+		JWTSecret:             jwtSecret,
+		TenantOrchestratorURL: tenantOrchestratorURL,
+		TenantBaseURL:         tenantBaseURL,
 		AccessTokenTTL:      time.Duration(accessTTLMin) * time.Minute,
 		RefreshTokenTTLDays: refreshTTLDays,
 		Port:                port,
