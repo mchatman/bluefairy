@@ -73,19 +73,11 @@ func (c *Client) buildHost(name string) string {
 	return strings.ReplaceAll(c.tenantHostTemplate, "{name}", name)
 }
 
-// GetOrCreateInstance gets an existing instance or creates a new one.
-// It always tries a GET first to avoid creating duplicates on retries.
-func (c *Client) GetOrCreateInstance(ctx context.Context, userID string, token string) (*Instance, error) {
-	// Check cache first
-	c.mu.RLock()
-	if inst, ok := c.instances[userID]; ok {
-		c.mu.RUnlock()
-		return inst, nil
-	}
-	c.mu.RUnlock()
-
+// CreateInstance provisions a new instance for the user.
+// It calls GetInstance first to avoid creating duplicates on retries.
+func (c *Client) CreateInstance(ctx context.Context, userID string, token string) (*Instance, error) {
 	// Try GET first — if the instance already exists, use it
-	inst, err := c.GetInstanceFromOrchestrator(ctx, userID)
+	inst, err := c.GetInstance(ctx, userID)
 	if err == nil && inst != nil {
 		return inst, nil
 	}
@@ -150,8 +142,8 @@ func (c *Client) GetOrCreateInstance(ctx context.Context, userID string, token s
 	return inst, nil
 }
 
-// GetInstanceFromOrchestrator looks up an instance via the tenant-orchestrator API.
-func (c *Client) GetInstanceFromOrchestrator(ctx context.Context, userID string) (*Instance, error) {
+// GetInstance looks up an instance via the tenant-orchestrator API.
+func (c *Client) GetInstance(ctx context.Context, userID string) (*Instance, error) {
 	// Check cache first
 	c.mu.RLock()
 	if inst, ok := c.instances[userID]; ok {

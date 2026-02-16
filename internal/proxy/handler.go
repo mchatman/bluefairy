@@ -42,7 +42,7 @@ func (h *Handler) HandleProxy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Look up existing tenant instance — never create on a proxy request
-	instance, err := h.tenantClient.GetInstanceFromOrchestrator(r.Context(), claims.Subject)
+	instance, err := h.tenantClient.GetInstance(r.Context(), claims.Subject)
 	if err != nil {
 		log.Printf("[proxy] failed to look up tenant instance for user %s: %v", claims.Subject, err)
 		http.Error(w, "Failed to locate instance", http.StatusServiceUnavailable)

@@ -130,8 +130,10 @@ func (c *K8sClient) buildHost(name string) string {
 	return strings.ReplaceAll(c.tenantHostTemplate, "{name}", strings.TrimPrefix(name, "tenant-"))
 }
 
-// GetInstanceFromOrchestrator implements the same interface as Client.
-func (c *K8sClient) GetInstanceFromOrchestrator(ctx context.Context, userID string) (*Instance, error) {
+// GetInstance returns the running instance for the given user, or (nil, nil)
+// if no instance exists. It checks the in-memory cache first, then queries
+// the Kubernetes API directly on a cache miss.
+func (c *K8sClient) GetInstance(ctx context.Context, userID string) (*Instance, error) {
 	// Check cache
 	c.mu.RLock()
 	if inst, ok := c.cache[userID]; ok {
@@ -156,10 +158,10 @@ func (c *K8sClient) GetInstanceFromOrchestrator(ctx context.Context, userID stri
 	return inst, nil
 }
 
-// GetOrCreateInstance looks up an existing instance. Creation is handled
+// CreateInstance looks up an existing instance. Creation is handled
 // by the openclaw-operator via CRDs, not by this client.
-func (c *K8sClient) GetOrCreateInstance(ctx context.Context, userID string, token string) (*Instance, error) {
-	return c.GetInstanceFromOrchestrator(ctx, userID)
+func (c *K8sClient) CreateInstance(ctx context.Context, userID string, token string) (*Instance, error) {
+	return c.GetInstance(ctx, userID)
 }
 
 func (c *K8sClient) lookupByUserID(ctx context.Context, userID string) (*Instance, error) {

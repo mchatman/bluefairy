@@ -136,7 +136,7 @@ func (d *DashboardHandler) handleCallback(w http.ResponseWriter, r *http.Request
 	}
 
 	// Look up the tenant to get the gateway token for WebSocket auth
-	inst, err := d.tenantClient.GetInstanceFromOrchestrator(r.Context(), claims.Subject)
+	inst, err := d.tenantClient.GetInstance(r.Context(), claims.Subject)
 	if err != nil || inst == nil || inst.Token == "" {
 		http.Redirect(w, r, "/", http.StatusFound)
 		return
@@ -229,7 +229,7 @@ func (d *DashboardHandler) handleProxy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Look up tenant instance
-	inst, err := d.tenantClient.GetInstanceFromOrchestrator(r.Context(), claims.Subject)
+	inst, err := d.tenantClient.GetInstance(r.Context(), claims.Subject)
 	if err != nil {
 		log.Printf("[dashboard] failed to look up tenant for user %s: %v", claims.Subject, err)
 		serveWorkspaceLoading(w)

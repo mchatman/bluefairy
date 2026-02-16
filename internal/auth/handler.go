@@ -128,7 +128,7 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request) {
 
 	// Provision tenant instance for the new user
 	gatewayToken := generateToken()
-	instance, err := h.tenantClient.GetOrCreateInstance(ctx, usr.ID, gatewayToken)
+	instance, err := h.tenantClient.CreateInstance(ctx, usr.ID, gatewayToken)
 	if err != nil {
 		// Log but don't fail signup - instance can be created on first use
 		log.Printf("[auth] failed to provision tenant for user %s: %v", usr.ID, err)

@@ -122,7 +122,7 @@ func (a *App) buildAPIRouter(userService *user.Service, authHandler *auth.Handle
 				return
 			}
 
-			inst, err := tenantClient.GetInstanceFromOrchestrator(r.Context(), claims.Subject)
+			inst, err := tenantClient.GetInstance(r.Context(), claims.Subject)
 			if err != nil {
 				http.Error(w, "Failed to look up instance", http.StatusBadGateway)
 				return

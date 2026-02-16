@@ -10,13 +10,14 @@ import "context"
 // Resolver abstracts the lookup and creation of tenant instances.
 // Implementations must be safe for concurrent use.
 type Resolver interface {
-	// GetInstanceFromOrchestrator returns the running instance for the given
-	// user, or (nil, nil) if no instance exists.
-	GetInstanceFromOrchestrator(ctx context.Context, userID string) (*Instance, error)
+	// GetInstance returns the running instance for the given user,
+	// or (nil, nil) if no instance exists.
+	GetInstance(ctx context.Context, userID string) (*Instance, error)
 
-	// GetOrCreateInstance returns the existing instance for the user or
-	// provisions a new one with the supplied gateway token.
-	GetOrCreateInstance(ctx context.Context, userID string, token string) (*Instance, error)
+	// CreateInstance provisions a new instance for the user with the
+	// supplied gateway token. It calls GetInstance first and returns
+	// the existing instance if one is already running.
+	CreateInstance(ctx context.Context, userID string, token string) (*Instance, error)
 }
 
 // Instance represents a running tenant workspace.
