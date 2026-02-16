@@ -2,16 +2,12 @@ package proxy
 
 import (
 	"bytes"
-	"crypto/tls"
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"net/http"
-	"net/http/httputil"
 	"net/url"
 	"strings"
-	"sync"
 
 	"github.com/mchatman/bluefairy/internal/auth"
 	"github.com/mchatman/bluefairy/internal/config"
@@ -240,53 +236,23 @@ func (d *DashboardHandler) handleProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Determine the Host header for upstream routing.
-	// When TENANT_HOST_TEMPLATE is set (e.g. connecting via LB IP but nginx
-	// needs a real hostname), use inst.Host; otherwise use the target URL's host.
-	routeHost := target.Host
-	if inst.Host != "" {
-		routeHost = inst.Host
-	}
+	host := routeHost(target, inst)
 
 	// Handle WebSocket upgrades via hijack+splice (httputil.ReverseProxy doesn't support them)
 	if isWebSocketUpgrade(r) {
-		d.handleWebSocketProxy(w, r, target, routeHost, inst.Token, claims.Subject, claims.Email)
+		proxyWebSocket(w, r, target, host, inst.Token, claims.Subject, claims.Email, d.cfg.ProxySecret)
 		return
 	}
 
 	// Reverse proxy to the tenant
-	proxy := httputil.NewSingleHostReverseProxy(target)
-
-	// When connecting via IP to an nginx ingress with a self-signed cert,
-	// we need to skip TLS verification and set the SNI server name so
-	// the ingress matches the right rule.
-	if target.Scheme == "https" && inst.Host != "" {
-		proxy.Transport = &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
-				ServerName:         routeHost,
-			},
-		}
-	}
-
-	originalDirector := proxy.Director
-	proxy.Director = func(req *http.Request) {
-		originalDirector(req)
-
-		// Inject gateway token for authentication
-		if inst.Token != "" {
-			q := req.URL.Query()
-			q.Set("token", inst.Token)
-			req.URL.RawQuery = q.Encode()
-		}
-
-		req.Header.Set("X-User-ID", claims.Subject)
-		req.Header.Set("X-User-Email", claims.Email)
-		if d.cfg.ProxySecret != "" {
-			req.Header.Set("X-Proxy-Secret", d.cfg.ProxySecret)
-		}
-		req.Host = routeHost
-	}
+	proxy := newTenantProxy(proxyOpts{
+		Target:      target,
+		Instance:    inst,
+		RouteHost:   host,
+		UserID:      claims.Subject,
+		UserEmail:   claims.Email,
+		ProxySecret: d.cfg.ProxySecret,
+	})
 
 	// Show friendly error page if the tenant is unreachable or starting up.
 	// IMPORTANT: Do NOT return 502/503 — App Platform intercepts those
@@ -327,134 +293,7 @@ func (d *DashboardHandler) handleProxy(w http.ResponseWriter, r *http.Request) {
 	proxy.ServeHTTP(w, r)
 }
 
-func (d *DashboardHandler) handleWebSocketProxy(w http.ResponseWriter, r *http.Request, target *url.URL, routeHost, gatewayToken, userID, userEmail string) {
-	// Determine backend address, adding default port if needed.
-	backendAddr := target.Host
-	if _, _, err := net.SplitHostPort(backendAddr); err != nil {
-		if target.Scheme == "https" || target.Scheme == "wss" {
-			backendAddr = net.JoinHostPort(backendAddr, "443")
-		} else {
-			backendAddr = net.JoinHostPort(backendAddr, "80")
-		}
-	}
 
-	// Hijack the client connection.
-	hj, ok := w.(http.Hijacker)
-	if !ok {
-		http.Error(w, "Server does not support hijacking", http.StatusInternalServerError)
-		return
-	}
-	clientConn, clientBuf, err := hj.Hijack()
-	if err != nil {
-		log.Printf("[dashboard-ws] hijack failed: %v", err)
-		return
-	}
-
-	// Dial the backend.
-	var backendConn net.Conn
-	if target.Scheme == "https" || target.Scheme == "wss" {
-		// Use routeHost for SNI so nginx ingress matches the right rule.
-		// Skip TLS verify since the ingress uses a self-signed cert.
-		sni := routeHost
-		if h, _, splitErr := net.SplitHostPort(routeHost); splitErr == nil {
-			sni = h
-		}
-		backendConn, err = tls.Dial("tcp", backendAddr, &tls.Config{
-			ServerName:         sni,
-			InsecureSkipVerify: true,
-		})
-	} else {
-		backendConn, err = net.Dial("tcp", backendAddr)
-	}
-	if err != nil {
-		log.Printf("[dashboard-ws] backend connect failed addr=%s: %v", backendAddr, err)
-		_, _ = clientConn.Write([]byte("HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nGateway unreachable"))
-		clientConn.Close()
-		return
-	}
-
-	// Build upstream path with query parameters.
-	upstreamPath := r.URL.Path
-	if upstreamPath == "" {
-		upstreamPath = "/"
-	}
-	q := r.URL.Query()
-	if gatewayToken != "" {
-		q.Set("token", gatewayToken)
-	}
-	if encoded := q.Encode(); encoded != "" {
-		upstreamPath += "?" + encoded
-	}
-
-	// Build the HTTP upgrade request.
-	var reqBuf strings.Builder
-	reqBuf.WriteString(fmt.Sprintf("GET %s HTTP/1.1\r\n", upstreamPath))
-
-	hostWritten := false
-	for key, vals := range r.Header {
-		lower := strings.ToLower(key)
-		switch lower {
-		case "host":
-			reqBuf.WriteString(fmt.Sprintf("Host: %s\r\n", routeHost))
-			hostWritten = true
-		case "origin":
-			reqBuf.WriteString(fmt.Sprintf("Origin: %s://%s\r\n", target.Scheme, routeHost))
-		default:
-			for _, v := range vals {
-				reqBuf.WriteString(fmt.Sprintf("%s: %s\r\n", key, v))
-			}
-		}
-	}
-	if !hostWritten {
-		reqBuf.WriteString(fmt.Sprintf("Host: %s\r\n", routeHost))
-	}
-	reqBuf.WriteString(fmt.Sprintf("X-User-ID: %s\r\n", userID))
-	reqBuf.WriteString(fmt.Sprintf("X-User-Email: %s\r\n", userEmail))
-	if d.cfg.ProxySecret != "" {
-		reqBuf.WriteString(fmt.Sprintf("X-Proxy-Secret: %s\r\n", d.cfg.ProxySecret))
-	}
-	reqBuf.WriteString("\r\n")
-
-	// Send the upgrade request to the backend.
-	_, err = backendConn.Write([]byte(reqBuf.String()))
-	if err != nil {
-		log.Printf("[dashboard-ws] backend write failed: %v", err)
-		backendConn.Close()
-		clientConn.Close()
-		return
-	}
-
-	// Flush any buffered data from the hijacked connection to the backend.
-	if clientBuf.Reader.Buffered() > 0 {
-		buffered := make([]byte, clientBuf.Reader.Buffered())
-		_, _ = clientBuf.Read(buffered)
-		_, _ = backendConn.Write(buffered)
-	}
-
-	// Bidirectional splice.
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	go func() {
-		defer wg.Done()
-		_, _ = io.Copy(clientConn, backendConn)
-		if tc, ok := clientConn.(*net.TCPConn); ok {
-			_ = tc.CloseWrite()
-		}
-	}()
-
-	go func() {
-		defer wg.Done()
-		_, _ = io.Copy(backendConn, clientConn)
-		if tc, ok := backendConn.(*net.TCPConn); ok {
-			_ = tc.CloseWrite()
-		}
-	}()
-
-	wg.Wait()
-	backendConn.Close()
-	clientConn.Close()
-}
 
 // tryRefresh attempts to transparently refresh an expired JWT using the
 // refresh token cookie. On success it sets new dashboard + refresh cookies
