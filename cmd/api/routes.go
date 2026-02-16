@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"log"
 	"net"
 	"net/http"
 
@@ -122,6 +123,7 @@ func (a *App) buildAPIRouter(userService *user.Service, authHandler *auth.Handle
 
 			inst, err := tenantClient.GetInstance(r.Context(), claims.Subject)
 			if err != nil {
+				log.Printf("instance lookup failed for user %s: %v", claims.Subject, err)
 				http.Error(w, "Failed to look up instance", http.StatusBadGateway)
 				return
 			}

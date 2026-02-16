@@ -14,3 +14,4 @@ COPY --from=build /bluefairy /usr/local/bin/bluefairy
 COPY migrations /app/migrations
 EXPOSE 8000
 ENTRYPOINT ["bluefairy"]
+

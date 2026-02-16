@@ -123,7 +123,6 @@ func (c *Client) CreateInstance(ctx context.Context, userID string, token string
 // GetInstance looks up an instance via the tenant-provisioner API.
 func (c *Client) GetInstance(ctx context.Context, userID string) (*Instance, error) {
 	url := fmt.Sprintf("%s/tenants/%s/instance", c.provisionerURL, userID)
-
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, err
