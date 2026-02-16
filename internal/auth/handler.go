@@ -91,10 +91,10 @@ func (h *Handler) issueTokenPair(ctx context.Context, usr *user.User) (*TokenPai
 	}, nil
 }
 
-// RefreshForUser validates and rotates a raw refresh token, then issues a new
-// access + refresh token pair. Used by both the /auth/refresh endpoint and the
-// dashboard's transparent cookie refresh.
-func (h *Handler) RefreshForUser(ctx context.Context, rawRefresh string) (*user.User, *TokenPairResult, error) {
+// Refresh validates and rotates a raw refresh token, then issues a new
+// access + refresh token pair. Used by both the HandleRefresh HTTP endpoint
+// and the dashboard's transparent cookie refresh.
+func (h *Handler) Refresh(ctx context.Context, rawRefresh string) (*user.User, *TokenPairResult, error) {
 	oldHash := SHA256Hash(rawRefresh)
 
 	userID, err := h.refreshStore.Validate(ctx, oldHash)
@@ -253,7 +253,7 @@ type RefreshRequest struct {
 
 // Refresh handles token rotation: validates the old refresh token, revokes it,
 // and issues a new access + refresh token pair.
-func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) HandleRefresh(w http.ResponseWriter, r *http.Request) {
 	// Read refresh token from cookie first, then fall back to request body
 	var rawRefresh string
 	if c, err := r.Cookie(refreshCookieName); err == nil && c.Value != "" {
@@ -270,7 +270,7 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	usr, tokens, err := h.RefreshForUser(r.Context(), rawRefresh)
+	usr, tokens, err := h.Refresh(r.Context(), rawRefresh)
 	if err != nil {
 		http.Error(w, "Invalid or expired refresh token", http.StatusUnauthorized)
 		return

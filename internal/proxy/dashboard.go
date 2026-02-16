@@ -58,7 +58,7 @@ func (d *DashboardHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case path == "/auth/signup" && r.Method == http.MethodPost:
 		d.authHandler.Signup(w, r)
 	case path == "/auth/refresh" && r.Method == http.MethodPost:
-		d.authHandler.Refresh(w, r)
+		d.authHandler.HandleRefresh(w, r)
 	case path == "/auth/callback":
 		d.handleCallback(w, r)
 	case path == "/logout":
@@ -170,7 +170,7 @@ func (d *DashboardHandler) handleLogout(w http.ResponseWriter, r *http.Request) 
 	}
 	if c, err := r.Cookie(RefreshCookieName); err == nil && c.Value != "" {
 		// If we couldn't get the user from the JWT, try via refresh token rotation
-		if usr, _, err := d.authHandler.RefreshForUser(r.Context(), c.Value); err == nil {
+		if usr, _, err := d.authHandler.Refresh(r.Context(), c.Value); err == nil {
 			_ = d.authHandler.RevokeAllTokens(r.Context(), usr.ID)
 		}
 	}
@@ -465,7 +465,7 @@ func (d *DashboardHandler) tryRefresh(w http.ResponseWriter, r *http.Request) (*
 		return nil, fmt.Errorf("no refresh cookie")
 	}
 
-	usr, tokens, err := d.authHandler.RefreshForUser(r.Context(), rc.Value)
+	usr, tokens, err := d.authHandler.Refresh(r.Context(), rc.Value)
 	if err != nil {
 		return nil, fmt.Errorf("refresh failed: %w", err)
 	}
