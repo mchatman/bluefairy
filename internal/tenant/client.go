@@ -20,6 +20,14 @@ type cachedInstance struct {
 	fetchedAt time.Time
 }
 
+// orchestratorResponse is the JSON envelope returned by the tenant-orchestrator
+// API for instance operations.
+type orchestratorResponse struct {
+	Endpoint     string `json:"endpoint"`
+	Status       string `json:"status"`
+	GatewayToken string `json:"gateway_token"`
+}
+
 // Client manages tenant instances via the tenant-orchestrator API.
 type Client struct {
 	orchestratorURL string
@@ -88,11 +96,7 @@ func (c *Client) CreateInstance(ctx context.Context, userID string, token string
 		return nil, fmt.Errorf("orchestrator error %d: %s", resp.StatusCode, respBody)
 	}
 
-	var result struct {
-		Endpoint     string `json:"endpoint"`
-		Status       string `json:"status"`
-		GatewayToken string `json:"gateway_token"`
-	}
+	var result orchestratorResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err
 	}
@@ -142,11 +146,7 @@ func (c *Client) GetInstance(ctx context.Context, userID string) (*Instance, err
 		return nil, fmt.Errorf("orchestrator error %d: %s", resp.StatusCode, body)
 	}
 
-	var result struct {
-		Endpoint     string `json:"endpoint"`
-		Status       string `json:"status"`
-		GatewayToken string `json:"gateway_token"`
-	}
+	var result orchestratorResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err
 	}
