@@ -1,0 +1,11 @@
+# Build output
+tmp/
+*.exe
+
+# Environment
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
