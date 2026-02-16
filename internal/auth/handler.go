@@ -31,16 +31,16 @@ type Handler struct {
 	userService    *user.Service
 	accountService *account.Service
 	tenantClient   tenant.Resolver
-	refreshStore   *RefreshStore
+	repo   *Repository
 }
 
-func NewHandler(cfg *config.Config, userService *user.Service, accountService *account.Service, refreshStore *RefreshStore, tenants tenant.Resolver) *Handler {
+func NewHandler(cfg *config.Config, userService *user.Service, accountService *account.Service, repo *Repository, tenants tenant.Resolver) *Handler {
 	return &Handler{
 		cfg:            cfg,
 		userService:    userService,
 		accountService: accountService,
 		tenantClient:   tenants,
-		refreshStore:   refreshStore,
+		repo:   repo,
 	}
 }
 
@@ -80,7 +80,7 @@ func (h *Handler) issueTokenPair(ctx context.Context, usr *user.User) (*TokenPai
 	rawRefresh := GenerateOpaqueToken()
 	refreshHash := SHA256Hash(rawRefresh)
 	refreshExpiry := time.Now().Add(time.Duration(h.cfg.RefreshTokenTTLDays) * 24 * time.Hour)
-	if err := h.refreshStore.Create(ctx, usr.ID, refreshHash, refreshExpiry); err != nil {
+	if err := h.repo.Create(ctx, usr.ID, refreshHash, refreshExpiry); err != nil {
 		return nil, fmt.Errorf("storing refresh token: %w", err)
 	}
 
@@ -97,13 +97,13 @@ func (h *Handler) issueTokenPair(ctx context.Context, usr *user.User) (*TokenPai
 func (h *Handler) RefreshToken(ctx context.Context, rawRefresh string) (*user.User, *TokenPairResult, error) {
 	oldHash := SHA256Hash(rawRefresh)
 
-	userID, err := h.refreshStore.Validate(ctx, oldHash)
+	userID, err := h.repo.Validate(ctx, oldHash)
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid or expired refresh token")
 	}
 
 	// Revoke old token (rotation)
-	_ = h.refreshStore.Revoke(ctx, oldHash)
+	_ = h.repo.Revoke(ctx, oldHash)
 
 	usr, err := h.userService.GetUser(ctx, userID)
 	if err != nil || usr == nil {
@@ -120,7 +120,7 @@ func (h *Handler) RefreshToken(ctx context.Context, rawRefresh string) (*user.Us
 
 // RevokeAllTokens revokes all refresh tokens for a user (e.g. on logout).
 func (h *Handler) RevokeAllTokens(ctx context.Context, userID string) error {
-	return h.refreshStore.RevokeAllForUser(ctx, userID)
+	return h.repo.RevokeAllForUser(ctx, userID)
 }
 
 // Signup handles POST /auth/signup. It validates the email and password,

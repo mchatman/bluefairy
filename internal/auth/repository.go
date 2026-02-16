@@ -9,18 +9,18 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// RefreshStore manages refresh token persistence in PostgreSQL.
-type RefreshStore struct {
+// Repository manages refresh token persistence in PostgreSQL.
+type Repository struct {
 	db *pgxpool.Pool
 }
 
-// NewRefreshStore creates a new RefreshStore backed by the given connection pool.
-func NewRefreshStore(db *pgxpool.Pool) *RefreshStore {
-	return &RefreshStore{db: db}
+// NewRepository creates a new Repository backed by the given connection pool.
+func NewRepository(db *pgxpool.Pool) *Repository {
+	return &Repository{db: db}
 }
 
 // Create inserts a new refresh token record.
-func (s *RefreshStore) Create(ctx context.Context, userID, tokenHash string, expiresAt time.Time) error {
+func (s *Repository) Create(ctx context.Context, userID, tokenHash string, expiresAt time.Time) error {
 	query := `
 		INSERT INTO refresh_tokens (user_id, token_hash, expires_at)
 		VALUES ($1, $2, $3)
@@ -31,7 +31,7 @@ func (s *RefreshStore) Create(ctx context.Context, userID, tokenHash string, exp
 
 // Validate looks up a non-revoked, non-expired refresh token by its hash.
 // Returns the associated user_id if valid.
-func (s *RefreshStore) Validate(ctx context.Context, tokenHash string) (string, error) {
+func (s *Repository) Validate(ctx context.Context, tokenHash string) (string, error) {
 	query := `
 		SELECT user_id FROM refresh_tokens
 		WHERE token_hash = $1
@@ -50,7 +50,7 @@ func (s *RefreshStore) Validate(ctx context.Context, tokenHash string) (string, 
 }
 
 // Revoke marks a single refresh token as revoked.
-func (s *RefreshStore) Revoke(ctx context.Context, tokenHash string) error {
+func (s *Repository) Revoke(ctx context.Context, tokenHash string) error {
 	query := `
 		UPDATE refresh_tokens
 		SET revoked_at = NOW()
@@ -61,7 +61,7 @@ func (s *RefreshStore) Revoke(ctx context.Context, tokenHash string) error {
 }
 
 // RevokeAllForUser revokes every refresh token belonging to the given user.
-func (s *RefreshStore) RevokeAllForUser(ctx context.Context, userID string) error {
+func (s *Repository) RevokeAllForUser(ctx context.Context, userID string) error {
 	query := `
 		UPDATE refresh_tokens
 		SET revoked_at = NOW()

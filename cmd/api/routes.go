@@ -33,10 +33,10 @@ func (a *App) loadRoutes() {
 	}
 
 	// Refresh store created once and shared by all auth consumers
-	refreshStore := auth.NewRefreshStore(a.pool)
+	repo := auth.NewRepository(a.pool)
 
 	// Auth handler shared by both API routes and dashboard login
-	authHandler := auth.NewHandler(a.config, userService, accountService, refreshStore, tenants)
+	authHandler := auth.NewHandler(a.config, userService, accountService, repo, tenants)
 
 	// Dashboard proxy — served on dashboard.wareit.ai
 	dashboard := proxy.NewDashboardHandler(a.config, authHandler, static.LoginHTML, tenants)
