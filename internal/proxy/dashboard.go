@@ -17,13 +17,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/mchatman/bluefairy/internal/auth"
 	"github.com/mchatman/bluefairy/internal/config"
+	"github.com/mchatman/bluefairy/internal/proxy/static"
 	"github.com/mchatman/bluefairy/internal/tenant"
 	"github.com/mchatman/bluefairy/internal/user"
-)
-
-const (
-	dashboardCookieName = "aware_dashboard"
-	refreshCookieName   = "aware_refresh"
 )
 
 // DashboardHandler serves the tenant proxy on dashboard.wareit.ai.
@@ -44,6 +40,8 @@ type DashboardHandler struct {
 	loginHTML    []byte
 }
 
+// NewDashboardHandler creates a DashboardHandler that serves the tenant dashboard UI.
+// The loginHTML parameter should be the embedded login page (typically static.LoginHTML).
 func NewDashboardHandler(cfg *config.Config, pool *pgxpool.Pool, userService *user.Service, authHandler *auth.Handler, loginHTML []byte, tenants tenant.Resolver) *DashboardHandler {
 	return &DashboardHandler{
 		cfg:          cfg,
@@ -80,7 +78,7 @@ func (d *DashboardHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // serveLoginPage serves the embedded login/signup page.
 func (d *DashboardHandler) serveLoginPage(w http.ResponseWriter, r *http.Request) {
 	// If user already has a valid session, redirect to dashboard
-	if c, err := r.Cookie(dashboardCookieName); err == nil && c.Value != "" {
+	if c, err := r.Cookie(DashboardCookieName); err == nil && c.Value != "" {
 		if _, err := auth.VerifyAccessToken(d.jwtSecret, c.Value); err == nil {
 			http.Redirect(w, r, "/", http.StatusFound)
 			return
@@ -108,14 +106,14 @@ func (d *DashboardHandler) handleCallback(w http.ResponseWriter, r *http.Request
 	// Validate the JWT
 	claims, err := auth.VerifyAccessToken(d.jwtSecret, tokenStr)
 	if err != nil {
-		log.Printf("Invalid callback token: %v", err)
+		log.Printf("[dashboard] invalid callback token: %v", err)
 		http.Redirect(w, r, "/login", http.StatusFound)
 		return
 	}
 
 	// Set HTTP-only cookie for the JWT on this domain
 	http.SetCookie(w, &http.Cookie{
-		Name:     dashboardCookieName,
+		Name:     DashboardCookieName,
 		Value:    tokenStr,
 		Path:     "/",
 		MaxAge:   7 * 24 * 60 * 60, // 7 days
@@ -127,7 +125,7 @@ func (d *DashboardHandler) handleCallback(w http.ResponseWriter, r *http.Request
 	// Also set refresh token cookie if provided in the callback URL
 	if rt := r.URL.Query().Get("refresh_token"); rt != "" {
 		http.SetCookie(w, &http.Cookie{
-			Name:     refreshCookieName,
+			Name:     RefreshCookieName,
 			Value:    rt,
 			Path:     "/",
 			MaxAge:   d.cfg.RefreshTokenTTLDays * 24 * 60 * 60,
@@ -151,7 +149,7 @@ func (d *DashboardHandler) handleCallback(w http.ResponseWriter, r *http.Request
 func (d *DashboardHandler) handleLogout(w http.ResponseWriter, r *http.Request) {
 	// Clear the dashboard cookie
 	http.SetCookie(w, &http.Cookie{
-		Name:     dashboardCookieName,
+		Name:     DashboardCookieName,
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,
@@ -162,7 +160,7 @@ func (d *DashboardHandler) handleLogout(w http.ResponseWriter, r *http.Request) 
 
 	// Clear the refresh token cookie
 	http.SetCookie(w, &http.Cookie{
-		Name:     refreshCookieName,
+		Name:     RefreshCookieName,
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,
@@ -172,13 +170,13 @@ func (d *DashboardHandler) handleLogout(w http.ResponseWriter, r *http.Request) 
 	})
 
 	// Revoke all refresh tokens for the user if we can identify them
-	if c, err := r.Cookie(dashboardCookieName); err == nil && c.Value != "" {
+	if c, err := r.Cookie(DashboardCookieName); err == nil && c.Value != "" {
 		// Try to parse claims even from an expired JWT to get the user ID
 		if claims, err := auth.VerifyAccessToken(d.jwtSecret, c.Value); err == nil {
 			_ = d.refreshStore.RevokeAllForUser(r.Context(), claims.Subject)
 		}
 	}
-	if c, err := r.Cookie(refreshCookieName); err == nil && c.Value != "" {
+	if c, err := r.Cookie(RefreshCookieName); err == nil && c.Value != "" {
 		tokenHash := auth.SHA256Hash(c.Value)
 		if userID, err := d.refreshStore.Validate(r.Context(), tokenHash); err == nil {
 			_ = d.refreshStore.RevokeAllForUser(r.Context(), userID)
@@ -191,7 +189,7 @@ func (d *DashboardHandler) handleLogout(w http.ResponseWriter, r *http.Request) 
 
 func (d *DashboardHandler) clearAllCookies(w http.ResponseWriter) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     dashboardCookieName,
+		Name:     DashboardCookieName,
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,
@@ -200,7 +198,7 @@ func (d *DashboardHandler) clearAllCookies(w http.ResponseWriter) {
 		SameSite: http.SameSiteLaxMode,
 	})
 	http.SetCookie(w, &http.Cookie{
-		Name:     refreshCookieName,
+		Name:     RefreshCookieName,
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,
@@ -212,7 +210,7 @@ func (d *DashboardHandler) clearAllCookies(w http.ResponseWriter) {
 
 func (d *DashboardHandler) handleProxy(w http.ResponseWriter, r *http.Request) {
 	// Read JWT from cookie
-	cookie, err := r.Cookie(dashboardCookieName)
+	cookie, err := r.Cookie(DashboardCookieName)
 	if err != nil || cookie.Value == "" {
 		http.Redirect(w, r, "/login", http.StatusFound)
 		return
@@ -233,7 +231,7 @@ func (d *DashboardHandler) handleProxy(w http.ResponseWriter, r *http.Request) {
 	// Look up tenant instance
 	inst, err := d.tenantClient.GetInstanceFromOrchestrator(r.Context(), claims.Subject)
 	if err != nil {
-		log.Printf("Failed to look up tenant for user %s: %v", claims.Subject, err)
+		log.Printf("[dashboard] failed to look up tenant for user %s: %v", claims.Subject, err)
 		serveWorkspaceLoading(w)
 		return
 	}
@@ -245,7 +243,7 @@ func (d *DashboardHandler) handleProxy(w http.ResponseWriter, r *http.Request) {
 	// Parse the tenant endpoint
 	target, err := url.Parse(inst.Endpoint)
 	if err != nil {
-		log.Printf("Invalid tenant endpoint %s: %v", inst.Endpoint, err)
+		log.Printf("[dashboard] invalid tenant endpoint %s: %v", inst.Endpoint, err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
@@ -323,7 +321,7 @@ func (d *DashboardHandler) handleProxy(w http.ResponseWriter, r *http.Request) {
 			resp.StatusCode == http.StatusBadGateway ||
 			resp.StatusCode == http.StatusServiceUnavailable {
 			resp.Body.Close()
-			body := []byte(workspaceLoadingHTML)
+			body := static.LoadingHTML
 			resp.Body = io.NopCloser(bytes.NewReader(body))
 			resp.ContentLength = int64(len(body))
 			resp.Header.Set("Content-Length", fmt.Sprintf("%d", len(body)))
@@ -470,7 +468,7 @@ func (d *DashboardHandler) handleWebSocketProxy(w http.ResponseWriter, r *http.R
 // refresh token cookie. On success it sets new dashboard + refresh cookies
 // and returns the fresh JWT claims. On failure it returns an error.
 func (d *DashboardHandler) tryRefresh(w http.ResponseWriter, r *http.Request) (*auth.JWTClaims, error) {
-	rc, err := r.Cookie(refreshCookieName)
+	rc, err := r.Cookie(RefreshCookieName)
 	if err != nil || rc.Value == "" {
 		return nil, fmt.Errorf("no refresh cookie")
 	}
@@ -509,7 +507,7 @@ func (d *DashboardHandler) tryRefresh(w http.ResponseWriter, r *http.Request) (*
 
 	// Set new cookies
 	http.SetCookie(w, &http.Cookie{
-		Name:     dashboardCookieName,
+		Name:     DashboardCookieName,
 		Value:    token.AccessToken,
 		Path:     "/",
 		MaxAge:   7 * 24 * 60 * 60,
@@ -518,7 +516,7 @@ func (d *DashboardHandler) tryRefresh(w http.ResponseWriter, r *http.Request) (*
 		SameSite: http.SameSiteLaxMode,
 	})
 	http.SetCookie(w, &http.Cookie{
-		Name:     refreshCookieName,
+		Name:     RefreshCookieName,
 		Value:    newRaw,
 		Path:     "/",
 		MaxAge:   d.cfg.RefreshTokenTTLDays * 24 * 60 * 60,
@@ -533,8 +531,13 @@ func (d *DashboardHandler) tryRefresh(w http.ResponseWriter, r *http.Request) (*
 		return nil, fmt.Errorf("verify fresh token: %w", err)
 	}
 
-	log.Printf("Transparently refreshed JWT for user %s", usr.ID)
+	log.Printf("[dashboard] transparently refreshed JWT for user %s", usr.ID)
 	return claims, nil
+}
+
+// wantsHTML returns true if the request prefers an HTML response.
+func wantsHTML(r *http.Request) bool {
+	return strings.Contains(r.Header.Get("Accept"), "text/html")
 }
 
 func isWebSocketUpgrade(r *http.Request) bool {
@@ -552,39 +555,5 @@ func serveWorkspaceLoading(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Retry-After", "5")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(workspaceLoadingHTML))
+	_, _ = w.Write(static.LoadingHTML)
 }
-
-// workspaceLoadingHTML is the friendly page shown when the tenant pod is
-// starting up or temporarily unreachable.
-var workspaceLoadingHTML = `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Starting your workspace…</title>
-<style>
-  *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-       background:#0a0a0f;color:#e0e0e0;display:flex;align-items:center;
-       justify-content:center;min-height:100vh;text-align:center}
-  .card{max-width:420px;padding:2.5rem}
-  h1{font-size:1.4rem;font-weight:600;margin-bottom:.75rem}
-  p{color:#888;font-size:.95rem;line-height:1.5;margin-bottom:1.5rem}
-  .spinner{width:40px;height:40px;margin:0 auto 1.5rem;
-           border:3px solid #222;border-top-color:#6c63ff;border-radius:50%;
-           animation:spin .8s linear infinite}
-  @keyframes spin{to{transform:rotate(360deg)}}
-  .retry{color:#6c63ff;font-size:.85rem}
-</style>
-</head>
-<body>
-<div class="card">
-  <div class="spinner"></div>
-  <h1>Starting your workspace</h1>
-  <p>This usually takes just a few seconds. The page will refresh automatically.</p>
-  <div class="retry">Retrying…</div>
-</div>
-<script>setTimeout(function(){location.reload()},5000)</script>
-</body>
-</html>`

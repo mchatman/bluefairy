@@ -1,3 +1,6 @@
+// Package main is the entry point for the Bluefairy API server.
+// It loads configuration, connects to the database, runs migrations,
+// and starts the HTTP server with host-based routing.
 package main
 
 import (

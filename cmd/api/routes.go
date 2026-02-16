@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -14,7 +15,7 @@ import (
 	"github.com/mchatman/bluefairy/internal/user"
 )
 
-const dashboardHost = "dashboard.wareit.ai"
+
 
 func (a *App) loadRoutes() {
 	// Initialize repositories and services needed by both dashboard and API
@@ -45,19 +46,13 @@ func (a *App) loadRoutes() {
 	router.Use(middleware.Logger)
 	router.Use(middleware.Recoverer)
 
+	// Host-based routing: requests to the dashboard hostname are served by
+	// the DashboardHandler (login, auth callbacks, tenant reverse-proxy);
+	// everything else hits the JSON API router.
 	router.HandleFunc("/*", func(w http.ResponseWriter, r *http.Request) {
-		host := r.Host
-		// Strip port if present
-		if i := len(host) - 1; i > 0 {
-			for i > 0 && host[i] != ':' && host[i] != ']' {
-				i--
-			}
-			if i > 0 && host[i] == ':' {
-				host = host[:i]
-			}
-		}
+		host := stripPort(r.Host)
 
-		if host == dashboardHost {
+		if host == proxy.DashboardHost {
 			dashboard.ServeHTTP(w, r)
 		} else {
 			apiRouter.ServeHTTP(w, r)
@@ -65,6 +60,17 @@ func (a *App) loadRoutes() {
 	})
 
 	a.router = router
+}
+
+// stripPort removes the port suffix from a host string (e.g. "example.com:8080"
+// becomes "example.com"). IPv6 addresses in brackets are handled correctly.
+func stripPort(hostPort string) string {
+	host, _, err := net.SplitHostPort(hostPort)
+	if err != nil {
+		// No port present or malformed — return as-is.
+		return hostPort
+	}
+	return host
 }
 
 func (a *App) buildAPIRouter(userService *user.Service, authHandler *auth.Handler, tenants tenant.Resolver) http.Handler {

@@ -1,3 +1,5 @@
+// Package config loads and validates application configuration from
+// environment variables.
 package config
 
 import (
@@ -8,42 +10,31 @@ import (
 )
 
 // Config holds all configuration for the Go server.
-// Values are read from environment variables at startup.
+// Values are read from environment variables at startup via [Load].
 type Config struct {
-	// Database
+	// DatabaseURL is the PostgreSQL connection string (env: DATABASE_URL, required).
 	DatabaseURL string
 
-	// Auth
-	JWTSecret           string
-	AccessTokenTTL      time.Duration
+	// JWTSecret is the HMAC secret used to sign and verify access tokens (env: JWT_SECRET, required).
+	JWTSecret string
+	// AccessTokenTTL controls how long access tokens are valid (env: JWT_ACCESS_TTL_MIN, default: 15m).
+	AccessTokenTTL time.Duration
+	// RefreshTokenTTLDays controls refresh token lifetime in days (env: JWT_REFRESH_TTL_DAYS, default: 30).
 	RefreshTokenTTLDays int
 
-	// Server
+	// Port is the HTTP listen port (env: PORT, default: 8000).
 	Port int
 
-	// Gateway
-	StateRoot      string
-	GatewayImage   string
-	GatewayRuntime string // "docker" or "fly"
+	// ProxySecret is the shared secret sent as X-Proxy-Secret to tenant instances
+	// for request verification (env: PROXY_SECRET, optional).
+	ProxySecret string
 
-	// Fly (optional, required when GatewayRuntime == "fly")
-	FlyAPIToken      string
-	FlyGatewayApp    string
-	FlyGatewayRegion string
-	FlyGatewayImage  string
-	FlyIdleTimeout   time.Duration
+	// AnthropicOAuthToken and AnthropicAPIKey are passed through to tenant
+	// gateway containers as environment variables.
+	AnthropicOAuthToken string // env: ANTHROPIC_OAUTH_TOKEN
+	AnthropicAPIKey     string // env: ANTHROPIC_API_KEY
 
-	// Proxy
-	ProxySecret string // shared secret sent as X-Proxy-Secret header to tenant instances
-
-	// External
-	AnthropicOAuthToken string
-	AnthropicAPIKey     string
-
-	// Health
-	HealthCheckInterval time.Duration
-	MaxHealthFailures   int
-
+	// NodeEnv is the runtime environment label (env: NODE_ENV, default: "production").
 	NodeEnv string
 }
 
@@ -91,18 +82,6 @@ func Load() (*Config, error) {
 	accessTTLMin := optionalInt("JWT_ACCESS_TTL_MIN", 15)
 	refreshTTLDays := optionalInt("JWT_REFRESH_TTL_DAYS", 30)
 
-	// Gateway
-	stateRoot := optional("STATE_ROOT", "/tmp/aware-data")
-	gatewayImage := optional("GATEWAY_IMAGE", "aware-gateway:local")
-	gatewayRuntime := optional("GATEWAY_RUNTIME", "docker")
-
-	// Fly
-	flyAPIToken := optional("FLY_API_TOKEN", "")
-	flyGatewayApp := optional("FLY_GATEWAY_APP", "")
-	flyGatewayRegion := optional("FLY_GATEWAY_REGION", "")
-	flyGatewayImage := optional("FLY_GATEWAY_IMAGE", "")
-	flyIdleTimeoutSec := optionalInt("FLY_IDLE_TIMEOUT_SEC", 300)
-
 	// Proxy
 	proxySecret := optional("PROXY_SECRET", "")
 
@@ -110,33 +89,8 @@ func Load() (*Config, error) {
 	anthropicOAuthToken := optional("ANTHROPIC_OAUTH_TOKEN", "")
 	anthropicAPIKey := optional("ANTHROPIC_API_KEY", "")
 
-	// Health
-	healthCheckSec := optionalInt("HEALTH_CHECK_INTERVAL_SEC", 30)
-	maxHealthFailures := optionalInt("MAX_HEALTH_FAILURES", 3)
-
 	// Misc
 	nodeEnv := optional("NODE_ENV", "production")
-
-	// Validate gateway runtime
-	if gatewayRuntime != "docker" && gatewayRuntime != "fly" {
-		errs = append(errs, fmt.Sprintf("GATEWAY_RUNTIME must be \"docker\" or \"fly\", got %q", gatewayRuntime))
-	}
-
-	// When running on Fly, require Fly-specific vars
-	if gatewayRuntime == "fly" {
-		if flyAPIToken == "" {
-			errs = append(errs, "FLY_API_TOKEN is required when GATEWAY_RUNTIME=fly")
-		}
-		if flyGatewayApp == "" {
-			errs = append(errs, "FLY_GATEWAY_APP is required when GATEWAY_RUNTIME=fly")
-		}
-		if flyGatewayRegion == "" {
-			errs = append(errs, "FLY_GATEWAY_REGION is required when GATEWAY_RUNTIME=fly")
-		}
-		if flyGatewayImage == "" {
-			errs = append(errs, "FLY_GATEWAY_IMAGE is required when GATEWAY_RUNTIME=fly")
-		}
-	}
 
 	if len(errs) > 0 {
 		return nil, fmt.Errorf("config validation failed:\n  %s", joinErrors(errs))
@@ -148,19 +102,9 @@ func Load() (*Config, error) {
 		AccessTokenTTL:      time.Duration(accessTTLMin) * time.Minute,
 		RefreshTokenTTLDays: refreshTTLDays,
 		Port:                port,
-		StateRoot:           stateRoot,
-		GatewayImage:        gatewayImage,
-		GatewayRuntime:      gatewayRuntime,
-		FlyAPIToken:         flyAPIToken,
-		FlyGatewayApp:       flyGatewayApp,
-		FlyGatewayRegion:    flyGatewayRegion,
-		FlyGatewayImage:     flyGatewayImage,
-		FlyIdleTimeout:      time.Duration(flyIdleTimeoutSec) * time.Second,
 		ProxySecret:         proxySecret,
 		AnthropicOAuthToken: anthropicOAuthToken,
 		AnthropicAPIKey:     anthropicAPIKey,
-		HealthCheckInterval: time.Duration(healthCheckSec) * time.Second,
-		MaxHealthFailures:   maxHealthFailures,
 		NodeEnv:             nodeEnv,
 	}, nil
 }

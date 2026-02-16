@@ -1,3 +1,4 @@
+// Package db manages the PostgreSQL connection pool used throughout the application.
 package db
 
 import (

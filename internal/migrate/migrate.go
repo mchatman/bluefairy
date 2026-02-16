@@ -1,3 +1,5 @@
+// Package migrate runs database schema migrations using golang-migrate,
+// with a direct-SQL fallback for restricted-permission environments.
 package migrate
 
 import (

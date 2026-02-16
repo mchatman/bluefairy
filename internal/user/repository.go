@@ -1,3 +1,5 @@
+// Package user provides persistence and business logic for user accounts,
+// including CRUD operations and password verification.
 package user
 
 import (
@@ -8,25 +10,28 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// Repository handles user persistence in PostgreSQL.
 type Repository struct {
 	db *pgxpool.Pool
 }
 
+// NewRepository creates a new user Repository backed by the given connection pool.
 func NewRepository(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
+// User represents a user record in the database.
 type User struct {
-	ID            string     `json:"id"`
-	AccountID     string     `json:"account_id"`
-	Email         string     `json:"email"`
-	DisplayName   *string    `json:"display_name,omitempty"`
-	PasswordHash  string     `json:"-"`
-	EmailVerified bool       `json:"email_verified"`
-	Role          string     `json:"role"`
+	ID            string     `json:"id"`                    // UUID primary key.
+	AccountID     string     `json:"account_id"`            // Foreign key to the owning account.
+	Email         string     `json:"email"`                 // Unique email address.
+	DisplayName   *string    `json:"display_name,omitempty"` // Optional display name.
+	PasswordHash  string     `json:"-"`                     // Argon2id or bcrypt hash (never serialized to JSON).
+	EmailVerified bool       `json:"email_verified"`        // Whether the email has been confirmed.
+	Role          string     `json:"role"`                  // Role within the account (e.g. "owner", "member").
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
-	DeletedAt     *time.Time `json:"deleted_at,omitempty"`
+	DeletedAt     *time.Time `json:"deleted_at,omitempty"` // Soft-delete timestamp.
 }
 
 func (r *Repository) Create(ctx context.Context, accountID, email, passwordHash string, displayName *string, role string) (*User, error) {

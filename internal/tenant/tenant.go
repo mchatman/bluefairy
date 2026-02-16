@@ -1,18 +1,40 @@
-// Package tenant provides client interfaces for looking up tenant instances.
+// Package tenant provides client interfaces for looking up and provisioning
+// per-user tenant instances. Two implementations are available:
+//   - K8sClient reads OpenClawInstance custom resources directly from the
+//     Kubernetes API (preferred when running in-cluster).
+//   - Client communicates with the tenant-orchestrator HTTP API.
 package tenant
 
 import "context"
 
-// Resolver looks up tenant instances by user ID.
+// Resolver abstracts the lookup and creation of tenant instances.
+// Implementations must be safe for concurrent use.
 type Resolver interface {
+	// GetInstanceFromOrchestrator returns the running instance for the given
+	// user, or (nil, nil) if no instance exists.
 	GetInstanceFromOrchestrator(ctx context.Context, userID string) (*Instance, error)
+
+	// GetOrCreateInstance returns the existing instance for the user or
+	// provisions a new one with the supplied gateway token.
 	GetOrCreateInstance(ctx context.Context, userID string, token string) (*Instance, error)
 }
 
-// Instance represents a tenant instance.
+// Instance represents a running tenant workspace.
 type Instance struct {
-	Name     string // instance name from orchestrator (e.g. "tenant-1c9de7b5")
-	Endpoint string // URL to connect to (e.g. "http://24.199.73.199" or "http://tenant-1c9de7b5.internal.wareit.ai")
-	Host     string // hostname for Host header routing (e.g. "tenant-1c9de7b5.internal.wareit.ai"); empty = use Endpoint host
-	Token    string // gateway token for authentication
+	// Name is the instance identifier returned by the orchestrator (e.g. "tenant-1c9de7b5").
+	Name string
+
+	// Endpoint is the URL used to connect to the tenant
+	// (e.g. "http://24.199.73.199" or "http://tenant-1c9de7b5.internal.wareit.ai").
+	Endpoint string
+
+	// Host is the hostname sent in the Host header for upstream routing.
+	// When the Endpoint is an IP address and nginx ingress needs a real
+	// hostname for matching, this field is populated from TENANT_HOST_TEMPLATE.
+	// Empty means the Endpoint host should be used directly.
+	Host string
+
+	// Token is the gateway authentication token passed to the tenant instance
+	// as a query parameter or header.
+	Token string
 }

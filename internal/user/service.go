@@ -3,26 +3,22 @@ package user
 import (
 	"context"
 	"errors"
-
-	"golang.org/x/crypto/bcrypt"
 )
 
+// Service provides user management operations backed by a PostgreSQL repository.
 type Service struct {
 	repo *Repository
 }
 
+// NewService creates a new user Service with the given repository.
 func NewService(repo *Repository) *Service {
 	return &Service{repo: repo}
 }
 
-// CreateUser creates a new user (account must already exist)
-func (s *Service) CreateUser(ctx context.Context, accountID, email, password string, displayName *string, role string) (*User, error) {
-	// Hash password
-	passwordHash, err := HashPassword(password)
-	if err != nil {
-		return nil, err
-	}
-
+// CreateUser creates a new user with the given pre-hashed password.
+// The caller is responsible for hashing the password (e.g. via auth.HashPassword).
+// Returns an error if a user with the same email already exists.
+func (s *Service) CreateUser(ctx context.Context, accountID, email, passwordHash string, displayName *string, role string) (*User, error) {
 	// Check if user already exists
 	existing, err := s.repo.GetByEmail(ctx, email)
 	if err != nil {
@@ -36,27 +32,14 @@ func (s *Service) CreateUser(ctx context.Context, accountID, email, password str
 	return s.repo.Create(ctx, accountID, email, passwordHash, displayName, role)
 }
 
-// GetUser retrieves a user by ID
+// GetUser retrieves a user by their unique ID.
+// Returns nil if the user does not exist or has been soft-deleted.
 func (s *Service) GetUser(ctx context.Context, id string) (*User, error) {
 	return s.repo.GetByID(ctx, id)
 }
 
-// GetUserByEmail retrieves a user by email
+// GetUserByEmail retrieves a user by their email address.
+// Returns nil if no active user with that email exists.
 func (s *Service) GetUserByEmail(ctx context.Context, email string) (*User, error) {
 	return s.repo.GetByEmail(ctx, email)
-}
-
-// VerifyPassword checks if the provided password matches the hash
-func (s *Service) VerifyPassword(user *User, password string) bool {
-	err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
-	return err == nil
-}
-
-// HashPassword creates a bcrypt hash of the password
-func HashPassword(password string) (string, error) {
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		return "", err
-	}
-	return string(hash), nil
 }
