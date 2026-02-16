@@ -17,7 +17,9 @@ services:
       retries: 5
 
   api:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
     container_name: bluefairy-api
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/bluefairy?sslmode=disable

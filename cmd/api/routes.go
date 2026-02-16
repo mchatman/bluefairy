@@ -50,7 +50,7 @@ func (a *App) loadRoutes() {
 	router.HandleFunc("/*", func(w http.ResponseWriter, r *http.Request) {
 		host := stripPort(r.Host)
 
-		if host == proxy.DashboardHost {
+		if host == a.config.DashboardHost {
 			dashboard.ServeHTTP(w, r)
 		} else {
 			apiRouter.ServeHTTP(w, r)

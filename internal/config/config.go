@@ -34,6 +34,10 @@ type Config struct {
 	// Example: "http://{name}.wareit.ai" (env: TENANT_BASE_URL, required).
 	TenantBaseURL string
 
+	// DashboardHost is the hostname that triggers dashboard-mode routing
+	// (env: DASHBOARD_HOST, default: dashboard.wareit.ai).
+	DashboardHost string
+
 	// ProxySecret is the shared secret sent as X-Proxy-Secret to tenant instances
 	// for request verification (env: PROXY_SECRET, optional).
 	ProxySecret string
@@ -93,6 +97,9 @@ func Load() (*Config, error) {
 	accessTTLMin := optionalInt("JWT_ACCESS_TTL_MIN", 15)
 	refreshTTLDays := optionalInt("JWT_REFRESH_TTL_DAYS", 30)
 
+	// Dashboard
+	dashboardHost := optional("DASHBOARD_HOST", "dashboard.wareit.ai")
+
 	// Proxy
 	proxySecret := optional("PROXY_SECRET", "")
 
@@ -115,6 +122,7 @@ func Load() (*Config, error) {
 		AccessTokenTTL:      time.Duration(accessTTLMin) * time.Minute,
 		RefreshTokenTTLDays: refreshTTLDays,
 		Port:                port,
+		DashboardHost:       dashboardHost,
 		ProxySecret:         proxySecret,
 		AnthropicOAuthToken: anthropicOAuthToken,
 		AnthropicAPIKey:     anthropicAPIKey,
