@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -72,6 +73,16 @@ func stripPort(hostPort string) string {
 	return host
 }
 
+// isWebSocketUpgrade returns true if the request is a WebSocket upgrade.
+func isWebSocketUpgrade(r *http.Request) bool {
+	for _, v := range r.Header["Connection"] {
+		if strings.EqualFold(strings.TrimSpace(v), "upgrade") {
+			return true
+		}
+	}
+	return false
+}
+
 func (a *App) buildAPIRouter(userService *user.Service, authHandler *auth.Handler, tenants *tenant.Client) http.Handler {
 	router := chi.NewRouter()
 
@@ -91,6 +102,12 @@ func (a *App) buildAPIRouter(userService *user.Service, authHandler *auth.Handle
 	router.Post("/auth/refresh", authHandler.HandleRefreshToken)
 
 	tenantClient := tenants
+
+	// Root-level WebSocket proxy — the tenant app in the workspace iframe
+	// connects its WebSocket to wss://<location.host> (no path). We intercept
+	// WebSocket upgrades at the root and proxy them to the tenant.
+	// Auth is via the "token" cookie set by the /workspace/ handler.
+	var rootWSHandler http.HandlerFunc
 
 	// Protected routes (require authentication)
 	router.Group(func(r chi.Router) {
@@ -150,7 +167,24 @@ func (a *App) buildAPIRouter(userService *user.Service, authHandler *auth.Handle
 			// Workspace proxy — serves the tenant UI in an iframe from aware-web.
 			// Auth is via ?token=JWT query param since the iframe is cross-origin.
 			r.HandleFunc("/workspace/*", proxyHandler.HandleWorkspace)
+
+			// Expose the workspace handler for root-level WebSocket upgrades.
+			rootWSHandler = func(w http.ResponseWriter, r *http.Request) {
+				proxyHandler.HandleWorkspace(w, r)
+			}
 		}
+	})
+
+	// Override the root GET handler to also handle WebSocket upgrades.
+	// The tenant app connects to wss://<host>/ with no path prefix.
+	router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if isWebSocketUpgrade(r) && rootWSHandler != nil {
+			// Run auth middleware manually for the WebSocket request.
+			auth.Middleware(a.config.JWTSecret)(http.HandlerFunc(rootWSHandler)).ServeHTTP(w, r)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("Bluefairy API"))
 	})
 
 	return router
