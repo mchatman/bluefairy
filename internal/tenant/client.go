@@ -30,6 +30,7 @@ type Instance struct {
 // orchestratorResponse is the JSON envelope returned by the tenant-orchestrator
 // API for instance operations.
 type orchestratorResponse struct {
+	Name         string `json:"name"`
 	Endpoint     string `json:"endpoint"`
 	Status       string `json:"status"`
 	GatewayToken string `json:"gateway_token"`
@@ -113,8 +114,8 @@ func (c *Client) CreateInstance(ctx context.Context, userID string, token string
 	}
 
 	return &Instance{
-		Name:     result.Endpoint,
-		Endpoint: c.buildEndpoint(result.Endpoint),
+		Name:     result.Name,
+		Endpoint: c.buildEndpoint(result.Name),
 		Token:    instToken,
 	}, nil
 }
@@ -149,8 +150,8 @@ func (c *Client) GetInstance(ctx context.Context, userID string) (*Instance, err
 	}
 
 	return &Instance{
-		Name:     result.Endpoint,
-		Endpoint: c.buildEndpoint(result.Endpoint),
+		Name:     result.Name,
+		Endpoint: c.buildEndpoint(result.Name),
 		Token:    result.GatewayToken,
 	}, nil
 }
