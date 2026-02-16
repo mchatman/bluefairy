@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/mchatman/bluefairy/internal/auth"
 	"github.com/mchatman/bluefairy/internal/tenant"
@@ -118,7 +119,12 @@ func (h *Handler) HandleWorkspace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// WebSocket upgrades need hijack+splice.
+	// Strip /workspace prefix from the path before forwarding.
 	if isWebSocketUpgrade(r) {
+		r.URL.Path = strings.TrimPrefix(r.URL.Path, "/workspace")
+		if r.URL.Path == "" {
+			r.URL.Path = "/"
+		}
 		proxyWebSocket(w, r, target, target.Host, instance.Token, claims.Subject, claims.Email, h.proxySecret)
 		return
 	}
