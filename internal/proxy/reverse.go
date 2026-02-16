@@ -48,5 +48,15 @@ func newTenantProxy(opts proxyOpts) *httputil.ReverseProxy {
 		req.Host = opts.Target.Host
 	}
 
+	// Strip headers that prevent iframe embedding. The tenant app sets
+	// frame-ancestors 'none' by default, but we're serving it in an
+	// iframe on dashboard.wareit.ai through this proxy.
+	proxy.ModifyResponse = func(resp *http.Response) error {
+		resp.Header.Del("X-Frame-Options")
+		resp.Header.Del("Content-Security-Policy")
+		resp.Header.Del("Content-Security-Policy-Report-Only")
+		return nil
+	}
+
 	return proxy
 }
