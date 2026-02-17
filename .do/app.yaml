@@ -27,7 +27,7 @@ services:
   - key: TENANT_BASE_URL
     value: "http://{name}.wareit.ai"
   - key: FRONTEND_URL
-    value: "${FRONTEND_URL}"
+    value: "https://aware-web.vercel.app"
 
 databases:
 - name: bluefairy-db
