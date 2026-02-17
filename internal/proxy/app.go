@@ -191,5 +191,28 @@ func (h *AppHandler) proxyToTenant(w http.ResponseWriter, r *http.Request) {
 		ProxySecret: h.cfg.ProxySecret,
 	})
 
+	// If the tenant returns an error (pod not ready, ingress 404, etc.),
+	// redirect back to the loading screen instead of showing a raw error.
+	proxy.ModifyResponse = func(resp *http.Response) error {
+		if resp.StatusCode == http.StatusNotFound ||
+			resp.StatusCode == http.StatusBadGateway ||
+			resp.StatusCode == http.StatusServiceUnavailable ||
+			resp.StatusCode == http.StatusGatewayTimeout {
+			log.Printf("[app] tenant returned %d for user %s, redirecting to loading", resp.StatusCode, claims.Subject)
+			resp.StatusCode = http.StatusFound
+			resp.Header.Set("Location", "/dashboard")
+			resp.Header.Set("Content-Length", "0")
+			resp.Body.Close()
+			resp.Body = http.NoBody
+			resp.ContentLength = 0
+		}
+		return nil
+	}
+
+	proxy.ErrorHandler = func(rw http.ResponseWriter, req *http.Request, err error) {
+		log.Printf("[app] proxy error for user %s: %v", claims.Subject, err)
+		http.Redirect(rw, req, "/dashboard", http.StatusFound)
+	}
+
 	proxy.ServeHTTP(w, r)
 }
