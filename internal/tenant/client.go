@@ -69,6 +69,10 @@ func (c *Client) CreateInstance(ctx context.Context, userID string, token string
 	// Try GET first — if the instance already exists, use it
 	inst, err := c.GetInstance(ctx, userID)
 	if err == nil && inst != nil {
+		// If instance exists but has no token, update it with the provided token
+		if inst.Token == "" {
+			inst.Token = token
+		}
 		return inst, nil
 	}
 
