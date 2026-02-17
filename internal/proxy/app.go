@@ -178,7 +178,7 @@ func (h *AppHandler) proxyToTenant(w http.ResponseWriter, r *http.Request) {
 
 	// WebSocket upgrades use hijack+splice.
 	if isWebSocketUpgrade(r) {
-		proxyWebSocket(w, r, target, target.Host, instance.Token, claims.Subject, claims.Email, h.cfg.ProxySecret)
+		ProxyWebSocket(w, r, target, target.Host, instance.Token, claims.Subject, claims.Email, h.cfg.ProxySecret)
 		return
 	}
 

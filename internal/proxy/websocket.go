@@ -22,10 +22,10 @@ func isWebSocketUpgrade(r *http.Request) bool {
 	return false
 }
 
-// proxyWebSocket hijacks the client connection and splices it with a backend
+// ProxyWebSocket hijacks the client connection and splices it with a backend
 // TCP connection for WebSocket passthrough. httputil.ReverseProxy does not
 // support WebSocket upgrades, so we handle them manually.
-func proxyWebSocket(w http.ResponseWriter, r *http.Request, target *url.URL, routeHost, gatewayToken, userID, userEmail, proxySecret string) {
+func ProxyWebSocket(w http.ResponseWriter, r *http.Request, target *url.URL, routeHost, gatewayToken, userID, userEmail, proxySecret string) {
 	// Determine backend address, adding default port if needed.
 	backendAddr := target.Host
 	if _, _, err := net.SplitHostPort(backendAddr); err != nil {
