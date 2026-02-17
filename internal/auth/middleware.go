@@ -7,16 +7,13 @@ import (
 	"strings"
 )
 
-// contextKey is an unexported type used for context keys to prevent collisions.
 type contextKey int
 
 const claimsKey contextKey = iota
 
 // Middleware returns an HTTP middleware that extracts and verifies a JWT
-// from the Authorization header ("Bearer <token>"), the "token" query
-// parameter, or the "token" / "aware_token" cookie.
-// On success, the decoded JWTClaims are stored in the request context and
-// retrievable via GetClaims.
+// from the Authorization header ("Bearer <token>") or a cookie.
+// On success, the decoded JWTClaims are stored in the request context.
 func Middleware(secret string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -28,12 +25,7 @@ func Middleware(secret string) func(http.Handler) http.Handler {
 					writeAuthError(w, http.StatusUnauthorized, "auth/malformed_header", "Expected 'Bearer <token>'")
 					return
 				}
-				tokenStr = auth[7:] // len("Bearer ") == 7
-			}
-
-			// Fall back to "token" query parameter (used by cross-origin iframes)
-			if tokenStr == "" {
-				tokenStr = r.URL.Query().Get("token")
+				tokenStr = auth[7:]
 			}
 
 			// Fall back to cookies
@@ -49,7 +41,7 @@ func Middleware(secret string) func(http.Handler) http.Handler {
 			}
 
 			if tokenStr == "" {
-				writeAuthError(w, http.StatusUnauthorized, "auth/missing_token", "Authorization header, token parameter, or cookie required")
+				writeAuthError(w, http.StatusUnauthorized, "auth/missing_token", "Authorization header or cookie required")
 				return
 			}
 
@@ -66,7 +58,6 @@ func Middleware(secret string) func(http.Handler) http.Handler {
 }
 
 // GetClaims retrieves the JWTClaims from the request context.
-// Returns nil if the middleware has not run or if there are no claims.
 func GetClaims(ctx context.Context) *JWTClaims {
 	claims, _ := ctx.Value(claimsKey).(*JWTClaims)
 	return claims
