@@ -26,6 +26,8 @@ services:
     value: "https://tenant-provisioner-65mj2.ondigitalocean.app"
   - key: TENANT_BASE_URL
     value: "http://{name}.wareit.ai"
+  - key: FRONTEND_URL
+    value: "${FRONTEND_URL}"
 
 databases:
 - name: bluefairy-db
@@ -36,3 +38,5 @@ databases:
 domains:
 - domain: api.wareit.ai
   type: PRIMARY
+- domain: dashboard.wareit.ai
+  type: ALIAS

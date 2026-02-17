@@ -35,11 +35,19 @@ func (a *App) loadRoutes() {
 	// Auth handler shared by both API routes and dashboard login
 	authHandler := auth.NewHandler(a.config, userService, accountService, repo, tenants)
 
-	// Dashboard proxy — served on dashboard.wareit.ai
-	dashboard := proxy.NewDashboardHandler(a.config, authHandler, static.LoginHTML, tenants)
-
 	// API router — served on all other hosts
 	apiRouter := a.buildAPIRouter(userService, authHandler, tenants)
+
+	// Dashboard handler — served on dashboard.wareit.ai.
+	// If FRONTEND_URL is set, use the new AppHandler that proxies UI to
+	// aware-web on Vercel and workspace traffic to the tenant.
+	// Otherwise fall back to the legacy embedded-HTML DashboardHandler.
+	var dashboardHandler http.Handler
+	if a.config.FrontendURL != "" {
+		dashboardHandler = proxy.NewAppHandler(a.config, tenants, a.config.FrontendURL)
+	} else {
+		dashboardHandler = proxy.NewDashboardHandler(a.config, authHandler, static.LoginHTML, tenants)
+	}
 
 	// Top-level mux routes by Host header
 	router := chi.NewRouter()
@@ -53,7 +61,7 @@ func (a *App) loadRoutes() {
 		host := stripPort(r.Host)
 
 		if host == a.config.DashboardHost {
-			dashboard.ServeHTTP(w, r)
+			dashboardHandler.ServeHTTP(w, r)
 		} else {
 			apiRouter.ServeHTTP(w, r)
 		}

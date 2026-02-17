@@ -38,6 +38,10 @@ type Config struct {
 	// (env: DASHBOARD_HOST, default: dashboard.wareit.ai).
 	DashboardHost string
 
+	// FrontendURL is the URL of the aware-web deployment (Vercel).
+	// (env: FRONTEND_URL)
+	FrontendURL string
+
 	// ProxySecret is the shared secret sent as X-Proxy-Secret to tenant instances
 	// for request verification (env: PROXY_SECRET, optional).
 	ProxySecret string
@@ -99,6 +103,7 @@ func Load() (*Config, error) {
 
 	// Dashboard
 	dashboardHost := optional("DASHBOARD_HOST", "dashboard.wareit.ai")
+	frontendURL := optional("FRONTEND_URL", "")
 
 	// Proxy
 	proxySecret := optional("PROXY_SECRET", "")
@@ -123,6 +128,7 @@ func Load() (*Config, error) {
 		RefreshTokenTTLDays: refreshTTLDays,
 		Port:                port,
 		DashboardHost:       dashboardHost,
+		FrontendURL:         frontendURL,
 		ProxySecret:         proxySecret,
 		AnthropicOAuthToken: anthropicOAuthToken,
 		AnthropicAPIKey:     anthropicAPIKey,
