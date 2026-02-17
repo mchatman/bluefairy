@@ -103,7 +103,7 @@ func Load() (*Config, error) {
 
 	// Dashboard
 	dashboardHost := optional("DASHBOARD_HOST", "dashboard.wareit.ai")
-	frontendURL := optional("FRONTEND_URL", "")
+	frontendURL := required("FRONTEND_URL")
 
 	// Proxy
 	proxySecret := optional("PROXY_SECRET", "")

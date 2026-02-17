@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"net/http/httputil"
@@ -12,23 +13,26 @@ import (
 	"github.com/mchatman/bluefairy/internal/tenant"
 )
 
+const refreshCookieName = "aware_refresh"
+
 // AppHandler routes requests on dashboard.wareit.ai to either
 // aware-web (Vercel) for UI pages or the tenant for the workspace.
 // This keeps everything on one domain with no iframe or cross-origin issues.
 type AppHandler struct {
 	cfg          *config.Config
+	authHandler  *auth.Handler
 	tenantClient *tenant.Client
 	frontendURL  *url.URL
 }
 
 // NewAppHandler creates the unified dashboard handler.
 // frontendURL is the aware-web deployment URL (e.g. the *.vercel.app URL).
-func NewAppHandler(cfg *config.Config, tenants *tenant.Client, frontendURL string) *AppHandler {
+func NewAppHandler(cfg *config.Config, authHandler *auth.Handler, tenants *tenant.Client, frontendURL string) *AppHandler {
 	u, err := url.Parse(frontendURL)
 	if err != nil {
 		log.Fatalf("[app] invalid FRONTEND_URL %q: %v", frontendURL, err)
 	}
-	return &AppHandler{cfg: cfg, tenantClient: tenants, frontendURL: u}
+	return &AppHandler{cfg: cfg, authHandler: authHandler, tenantClient: tenants, frontendURL: u}
 }
 
 func (h *AppHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -66,14 +70,60 @@ func (h *AppHandler) isFrontendPath(path string) bool {
 	return false
 }
 
-// hasValidToken checks if the request has a valid JWT in the token cookie.
+// hasValidToken checks if the request has a valid or refreshable session.
 func (h *AppHandler) hasValidToken(r *http.Request) bool {
-	c, err := r.Cookie("token")
-	if err != nil || c.Value == "" {
-		return false
+	if c, err := r.Cookie("token"); err == nil && c.Value != "" {
+		if _, err := auth.VerifyAccessToken(h.cfg.JWTSecret, c.Value); err == nil {
+			return true
+		}
 	}
-	_, err = auth.VerifyAccessToken(h.cfg.JWTSecret, c.Value)
-	return err == nil
+	// Access token missing or expired — check if there's a refresh token.
+	if c, err := r.Cookie(refreshCookieName); err == nil && c.Value != "" {
+		return true
+	}
+	return false
+}
+
+// tryRefresh attempts to transparently refresh an expired JWT using the
+// refresh token cookie. On success it sets new cookies and returns claims.
+func (h *AppHandler) tryRefresh(w http.ResponseWriter, r *http.Request) (*auth.JWTClaims, error) {
+	rc, err := r.Cookie(refreshCookieName)
+	if err != nil || rc.Value == "" {
+		return nil, fmt.Errorf("no refresh cookie")
+	}
+
+	_, tokens, err := h.authHandler.RefreshToken(r.Context(), rc.Value)
+	if err != nil {
+		return nil, fmt.Errorf("refresh failed: %w", err)
+	}
+
+	// Set new cookies.
+	http.SetCookie(w, &http.Cookie{
+		Name:     "token",
+		Value:    tokens.AccessToken,
+		Path:     "/",
+		MaxAge:   7 * 24 * 60 * 60,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	})
+	http.SetCookie(w, &http.Cookie{
+		Name:     refreshCookieName,
+		Value:    tokens.RefreshToken,
+		Path:     "/",
+		MaxAge:   h.cfg.RefreshTokenTTLDays * 24 * 60 * 60,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	claims, err := auth.VerifyAccessToken(h.cfg.JWTSecret, tokens.AccessToken)
+	if err != nil {
+		return nil, fmt.Errorf("verify fresh token: %w", err)
+	}
+
+	log.Printf("[app] transparently refreshed JWT for user %s", claims.Subject)
+	return claims, nil
 }
 
 // proxyToFrontend reverse-proxies the request to aware-web on Vercel.
@@ -88,6 +138,8 @@ func (h *AppHandler) proxyToFrontend(w http.ResponseWriter, r *http.Request) {
 }
 
 // proxyToTenant authenticates the user and proxies to their tenant instance.
+// If the access token is expired, it transparently refreshes using the
+// refresh token cookie before proxying.
 func (h *AppHandler) proxyToTenant(w http.ResponseWriter, r *http.Request) {
 	// Read JWT from cookie.
 	c, err := r.Cookie("token")
@@ -98,10 +150,12 @@ func (h *AppHandler) proxyToTenant(w http.ResponseWriter, r *http.Request) {
 
 	claims, err := auth.VerifyAccessToken(h.cfg.JWTSecret, c.Value)
 	if err != nil {
-		// Token expired — try refresh.
-		// For now, redirect to login. Transparent refresh can be added later.
-		http.Redirect(w, r, "/", http.StatusFound)
-		return
+		// Token expired — try transparent refresh.
+		claims, err = h.tryRefresh(w, r)
+		if err != nil {
+			http.Redirect(w, r, "/", http.StatusFound)
+			return
+		}
 	}
 
 	instance, err := h.tenantClient.GetInstance(r.Context(), claims.Subject)

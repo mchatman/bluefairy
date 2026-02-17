@@ -12,6 +12,16 @@ import (
 	"sync"
 )
 
+// isWebSocketUpgrade returns true if the request is a WebSocket upgrade.
+func isWebSocketUpgrade(r *http.Request) bool {
+	for _, v := range r.Header["Connection"] {
+		if strings.EqualFold(strings.TrimSpace(v), "upgrade") {
+			return true
+		}
+	}
+	return false
+}
+
 // proxyWebSocket hijacks the client connection and splices it with a backend
 // TCP connection for WebSocket passthrough. httputil.ReverseProxy does not
 // support WebSocket upgrades, so we handle them manually.

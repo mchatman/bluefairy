@@ -11,7 +11,6 @@ import (
 	"github.com/mchatman/bluefairy/internal/account"
 	"github.com/mchatman/bluefairy/internal/auth"
 	"github.com/mchatman/bluefairy/internal/proxy"
-	"github.com/mchatman/bluefairy/internal/proxy/static"
 	"github.com/mchatman/bluefairy/internal/tenant"
 	"github.com/mchatman/bluefairy/internal/user"
 )
@@ -31,15 +30,8 @@ func (a *App) loadRoutes() {
 	apiRouter := a.buildAPIRouter(userService, authHandler, tenants)
 
 	// Dashboard handler — served on dashboard.wareit.ai.
-	// If FRONTEND_URL is set, use AppHandler (proxies UI to aware-web on
-	// Vercel, workspace traffic to tenant). Otherwise fall back to the
-	// legacy embedded-HTML DashboardHandler.
-	var dashboardHandler http.Handler
-	if a.config.FrontendURL != "" {
-		dashboardHandler = proxy.NewAppHandler(a.config, tenants, a.config.FrontendURL)
-	} else {
-		dashboardHandler = proxy.NewDashboardHandler(a.config, authHandler, static.LoginHTML, tenants)
-	}
+	// Proxies UI routes to aware-web on Vercel, workspace/WebSocket to tenant.
+	dashboardHandler := proxy.NewAppHandler(a.config, authHandler, tenants, a.config.FrontendURL)
 
 	// Top-level mux routes by Host header
 	router := chi.NewRouter()
