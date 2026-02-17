@@ -161,6 +161,11 @@ func (a *App) buildAPIRouter(userService *user.Service, authHandler *auth.Handle
 			return
 		}
 
+		// Rewrite the request path to "/" so the upstream tenant gateway
+		// receives a standard WebSocket upgrade at its root, not at /gateway/ws.
+		r.URL.Path = "/"
+		r.URL.RawQuery = "" // proxyWebSocket will set ?token= itself
+
 		log.Printf("[gateway-ws] proxying tenant=%s target=%s", tenantName, target)
 		proxy.ProxyWebSocket(w, r, target, target.Host, token, "", "", a.config.ProxySecret)
 	})
