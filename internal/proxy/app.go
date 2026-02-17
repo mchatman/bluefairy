@@ -182,6 +182,30 @@ func (h *AppHandler) proxyToTenant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// On the initial root page load, redirect to include the gateway token
+	// in the URL fragment so the OpenClaw Control UI JavaScript can read it
+	// from window.location.hash. The reverse proxy injects ?token= on the
+	// upstream request, but the browser never sees that — it only sees the
+	// dashboard.wareit.ai URL. Without this redirect, the JS has no way
+	// to obtain the gateway token for WebSocket authentication.
+	if r.URL.Path == "/" && instance.Token != "" {
+		// Only redirect if the browser hasn't been redirected yet.
+		// We detect this via a short-lived cookie set alongside the redirect.
+		if _, err := r.Cookie("_gw_token_set"); err != nil {
+			http.SetCookie(w, &http.Cookie{
+				Name:     "_gw_token_set",
+				Value:    "1",
+				Path:     "/",
+				MaxAge:   30, // 30 seconds — just enough to prevent redirect loop
+				HttpOnly: true,
+				Secure:   true,
+				SameSite: http.SameSiteLaxMode,
+			})
+			http.Redirect(w, r, "/#token="+instance.Token, http.StatusFound)
+			return
+		}
+	}
+
 	// Regular HTTP — reverse proxy to tenant.
 	proxy := newTenantProxy(proxyOpts{
 		Target:      target,
