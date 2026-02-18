@@ -128,27 +128,14 @@ func (a *App) buildAPIRouter(userService *user.Service, authHandler *auth.Handle
 	})
 
 	// Gateway WebSocket proxy — allows the openclaw Mac app to connect to its
-	// tenant gateway using only a gateway token, without a user JWT session.
+	// tenant gateway without a user JWT session. The tenant gateway authenticates
+	// the client via the connect frame (token in params), not the HTTP upgrade.
 	//
 	// Usage: wss://api.wareit.ai/gateway/ws?tenant=<tenant-name>
-	// Auth:  Authorization: Bearer <gateway_token>   (or ?token=<gateway_token>)
-	//
-	// The token is injected as ?token= on the upstream WebSocket URL so the
-	// openclaw gateway can verify it in its connect-frame handler.
 	router.Get("/gateway/ws", func(w http.ResponseWriter, r *http.Request) {
 		tenantName := r.URL.Query().Get("tenant")
 		if tenantName == "" {
 			http.Error(w, "tenant query param required", http.StatusBadRequest)
-			return
-		}
-
-		// Accept token from Authorization header or query param.
-		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if token == "" {
-			token = r.URL.Query().Get("token")
-		}
-		if token == "" {
-			http.Error(w, "Authorization required", http.StatusUnauthorized)
 			return
 		}
 
@@ -161,13 +148,13 @@ func (a *App) buildAPIRouter(userService *user.Service, authHandler *auth.Handle
 			return
 		}
 
-		// Rewrite the request path to "/" so the upstream tenant gateway
-		// receives a standard WebSocket upgrade at its root, not at /gateway/ws.
+		// Rewrite path to / — the tenant gateway listens at root.
 		r.URL.Path = "/"
-		r.URL.RawQuery = "" // proxyWebSocket will set ?token= itself
+		r.URL.RawQuery = ""
 
 		log.Printf("[gateway-ws] proxying tenant=%s target=%s", tenantName, target)
-		proxy.ProxyWebSocket(w, r, target, target.Host, token, "", "", a.config.ProxySecret)
+		// Pass empty token — auth happens in the WebSocket connect frame.
+		proxy.ProxyWebSocket(w, r, target, target.Host, "", "", "", a.config.ProxySecret)
 	})
 
 	return router
