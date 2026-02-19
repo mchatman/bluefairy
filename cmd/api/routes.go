@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/mchatman/bluefairy/internal/account"
 	"github.com/mchatman/bluefairy/internal/auth"
+	"github.com/mchatman/bluefairy/internal/oauth"
 	"github.com/mchatman/bluefairy/internal/proxy"
 	"github.com/mchatman/bluefairy/internal/tenant"
 	"github.com/mchatman/bluefairy/internal/user"
@@ -28,8 +29,12 @@ func (a *App) loadRoutes() {
 	repo := auth.NewRepository(a.pool)
 	authHandler := auth.NewHandler(a.config, userService, accountService, repo, tenants)
 
+	oauthRepo := oauth.NewRepository(a.pool)
+	googleProvider := oauth.NewGoogleProvider(a.config.GoogleClientID, a.config.GoogleClientSecret, a.config.GoogleRedirectURI)
+	oauthHandler := oauth.NewHandler(oauthRepo, a.config.JWTSecret, googleProvider)
+
 	// API router — served on api.wareit.ai
-	apiRouter := a.buildAPIRouter(userService, authHandler, tenants)
+	apiRouter := a.buildAPIRouter(userService, authHandler, tenants, oauthHandler)
 
 	// Dashboard handler — served on dashboard.wareit.ai.
 	// Proxies UI routes to aware-web on Vercel, workspace/WebSocket to tenant.
@@ -61,7 +66,7 @@ func stripPort(hostPort string) string {
 	return host
 }
 
-func (a *App) buildAPIRouter(userService *user.Service, authHandler *auth.Handler, tenants *tenant.Client) http.Handler {
+func (a *App) buildAPIRouter(userService *user.Service, authHandler *auth.Handler, tenants *tenant.Client, oauthHandler *oauth.Handler) http.Handler {
 	router := chi.NewRouter()
 
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
@@ -78,6 +83,9 @@ func (a *App) buildAPIRouter(userService *user.Service, authHandler *auth.Handle
 	router.Post("/auth/signup", authHandler.Signup)
 	router.Post("/auth/login", authHandler.Login)
 	router.Post("/auth/refresh", authHandler.HandleRefreshToken)
+
+	// OAuth connections (Google, Microsoft, Slack, etc.)
+	oauthHandler.Mount(router)
 
 	// Protected routes (require authentication)
 	router.Group(func(r chi.Router) {

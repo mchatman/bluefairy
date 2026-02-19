@@ -63,6 +63,15 @@ func GetClaims(ctx context.Context) *JWTClaims {
 	return claims
 }
 
+// MiddlewareFunc wraps a handler function with JWT auth, storing claims in context.
+// Equivalent to applying Middleware to a single handler without a router group.
+func MiddlewareFunc(secret string, next http.HandlerFunc) http.HandlerFunc {
+	m := Middleware(secret)
+	return func(w http.ResponseWriter, r *http.Request) {
+		m(next).ServeHTTP(w, r)
+	}
+}
+
 func writeAuthError(w http.ResponseWriter, status int, code, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

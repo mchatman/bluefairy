@@ -28,6 +28,12 @@ services:
     value: "http://{name}.wareit.ai"
   - key: FRONTEND_URL
     value: "https://aware-web.vercel.app"
+  - key: GOOGLE_CLIENT_ID
+    type: SECRET
+  - key: GOOGLE_CLIENT_SECRET
+    type: SECRET
+  - key: GOOGLE_REDIRECT_URI
+    value: "https://api.wareit.ai/oauth/google/callback"
 
 databases:
 - name: bluefairy-db

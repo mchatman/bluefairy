@@ -51,6 +51,11 @@ type Config struct {
 	AnthropicOAuthToken string // env: ANTHROPIC_OAUTH_TOKEN
 	AnthropicAPIKey     string // env: ANTHROPIC_API_KEY
 
+	// Google OAuth credentials for the generic OAuth connections system.
+	GoogleClientID     string // env: GOOGLE_CLIENT_ID
+	GoogleClientSecret string // env: GOOGLE_CLIENT_SECRET
+	GoogleRedirectURI  string // env: GOOGLE_REDIRECT_URI (default: https://api.wareit.ai/oauth/google/callback)
+
 	// NodeEnv is the runtime environment label (env: NODE_ENV, default: "production").
 	NodeEnv string
 }
@@ -112,6 +117,11 @@ func Load() (*Config, error) {
 	anthropicOAuthToken := optional("ANTHROPIC_OAUTH_TOKEN", "")
 	anthropicAPIKey := optional("ANTHROPIC_API_KEY", "")
 
+	// Google OAuth
+	googleClientID     := optional("GOOGLE_CLIENT_ID", "")
+	googleClientSecret := optional("GOOGLE_CLIENT_SECRET", "")
+	googleRedirectURI  := optional("GOOGLE_REDIRECT_URI", "https://api.wareit.ai/oauth/google/callback")
+
 	// Misc
 	nodeEnv := optional("NODE_ENV", "production")
 
@@ -132,6 +142,9 @@ func Load() (*Config, error) {
 		ProxySecret:         proxySecret,
 		AnthropicOAuthToken: anthropicOAuthToken,
 		AnthropicAPIKey:     anthropicAPIKey,
+		GoogleClientID:      googleClientID,
+		GoogleClientSecret:  googleClientSecret,
+		GoogleRedirectURI:   googleRedirectURI,
 		NodeEnv:             nodeEnv,
 	}, nil
 }
