@@ -24,6 +24,7 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 type Account struct {
 	ID                   string     `json:"id"`
 	Name                 string     `json:"name"`
+	TenantInstanceID     *string    `json:"tenant_instance_id,omitempty"`
 	StripeCustomerID     *string    `json:"stripe_customer_id,omitempty"`
 	StripeSubscriptionID *string    `json:"stripe_subscription_id,omitempty"`
 	CreatedAt            time.Time  `json:"created_at"`
@@ -35,13 +36,14 @@ func (r *Repository) Create(ctx context.Context, name string) (*Account, error) 
 	query := `
 		INSERT INTO accounts (name)
 		VALUES ($1)
-		RETURNING id, name, stripe_customer_id, stripe_subscription_id, created_at, updated_at, deleted_at
+		RETURNING id, name, tenant_instance_id, stripe_customer_id, stripe_subscription_id, created_at, updated_at, deleted_at
 	`
 
 	account := &Account{}
 	err := r.db.QueryRow(ctx, query, name).Scan(
 		&account.ID,
 		&account.Name,
+		&account.TenantInstanceID,
 		&account.StripeCustomerID,
 		&account.StripeSubscriptionID,
 		&account.CreatedAt,
@@ -54,7 +56,7 @@ func (r *Repository) Create(ctx context.Context, name string) (*Account, error) 
 
 func (r *Repository) GetByID(ctx context.Context, id string) (*Account, error) {
 	query := `
-		SELECT id, name, stripe_customer_id, stripe_subscription_id, created_at, updated_at, deleted_at
+		SELECT id, name, tenant_instance_id, stripe_customer_id, stripe_subscription_id, created_at, updated_at, deleted_at
 		FROM accounts
 		WHERE id = $1 AND deleted_at IS NULL
 	`
@@ -63,6 +65,7 @@ func (r *Repository) GetByID(ctx context.Context, id string) (*Account, error) {
 	err := r.db.QueryRow(ctx, query, id).Scan(
 		&account.ID,
 		&account.Name,
+		&account.TenantInstanceID,
 		&account.StripeCustomerID,
 		&account.StripeSubscriptionID,
 		&account.CreatedAt,
@@ -80,10 +83,10 @@ func (r *Repository) GetByID(ctx context.Context, id string) (*Account, error) {
 func (r *Repository) Update(ctx context.Context, account *Account) error {
 	query := `
 		UPDATE accounts
-		SET name = $2, stripe_customer_id = $3, stripe_subscription_id = $4, updated_at = NOW()
+		SET name = $2, tenant_instance_id = $3, stripe_customer_id = $4, stripe_subscription_id = $5, updated_at = NOW()
 		WHERE id = $1 AND deleted_at IS NULL
 	`
 
-	_, err := r.db.Exec(ctx, query, account.ID, account.Name, account.StripeCustomerID, account.StripeSubscriptionID)
+	_, err := r.db.Exec(ctx, query, account.ID, account.Name, account.TenantInstanceID, account.StripeCustomerID, account.StripeSubscriptionID)
 	return err
 }

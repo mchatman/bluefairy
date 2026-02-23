@@ -178,6 +178,10 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[auth] failed to provision tenant for user %s: %v", usr.ID, err)
 	} else {
 		log.Printf("[auth] provisioned tenant instance %s for user %s", instance.Name, usr.ID)
+		acc.TenantInstanceID = &instance.Name
+		if err := h.accountService.UpdateAccount(ctx, acc); err != nil {
+			log.Printf("[auth] failed to save tenant_instance_id for account %s: %v", acc.ID, err)
+		}
 	}
 
 	tokens, err := h.issueTokenPair(ctx, usr)
