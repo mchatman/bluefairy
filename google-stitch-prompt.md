@@ -2,6 +2,46 @@
 
 ---
 
+## DESIGN INSPIRATION REFERENCES
+
+Use these Dribbble designs as visual reference for the look, feel, layout, and effects:
+
+### ⭐ PRIMARY REFERENCE (closest match — Voice AI SaaS, dark, teal/green accent, waveform UI)
+https://dribbble.com/shots/27115162-Voice-AI-SaaS-Landing-Page-Design-Dark-Futuristic-UI-UX-for-Pr
+- "Speak once. Create everything." — VocalAI by Shireen Zainab
+- Dark background, teal/green accent CTA, waveform visualizer with microphone icon, "TRY SAYING" voice command examples, integration logo bar (Google, Slack, Microsoft, Notion, Shopify), clean centered hero layout
+- **Use this as the primary design template. Match its dark background tone, typography weight, spacing, and teal accent color approach — but swap teal for our blue→green gradient.**
+
+### ⭐ SECONDARY REFERENCES (combine elements from these)
+
+**Deepgram Voice AI Landing** — dark with waveform visuals and voice tech iconography:
+https://dribbble.com/shots/27123205-AI-Saas-Landing-Page-for-Deepgram
+- Borrow: the glowing waveform hero graphic, circular integration icons, dark matte background texture
+
+**AIVERA — Luxury AI Assistant SaaS** — dark, full-page multi-section layout with dashboard mockups:
+https://dribbble.com/shots/27088043-AIVERA-Luxury-Modern-AI-Assistant-SaaS-Landing-Page-Website-UI
+- Borrow: the full-page dark multi-section structure, floating dashboard screenshots, "Trusted by" logo bar, feature card grid, pricing section layout
+
+**Nixito — AI SaaS Dark Mode** — dark with green gradient accents and stat cards:
+https://dribbble.com/shots/27133819-AI-SaaS-Landing-Page-Dark-Mode-Website-UI-Design
+- Borrow: the green accent CTA button, floating stat cards ("Active Nodes: 3,240", "+42% Efficiency Boost"), trusted-by logo bar, bold italic headline keywords
+
+**AI SaaS Landing — Dark UI (MD SHAKIL)** — purple glow gradient, dashboard hero, stat counters:
+https://dribbble.com/shots/26899679-AI-SaaS-Landing-Page-Dark-UI
+- Borrow: the purple radial glow behind the hero, stat counter row (50K+, 99.9%, 4.8/5), dashboard screenshot below the fold, "Start your 14-day free trial" + "Watch product demo" dual CTA pattern
+
+**Indigo — Dark SaaS AI Data Analytics** — deep indigo/purple with code matrix background:
+https://dribbble.com/shots/26723713-Indigo-dark-SaaS-Landing-page-AI-data-analytics
+- Borrow: the announcement pill badge ("New: Launching new products soon"), dual CTA buttons ("Start Free" + "Book a Demo"), subtle data/particle background texture
+
+### Additional inspiration:
+- https://dribbble.com/shots/26354368-AI-Assistant-Landing-Page-Bento-Card-Design (bento grid feature layout)
+- https://dribbble.com/shots/26881230-AI-Task-management-SaaS-Dark-blue-landing-page (dark blue task management)
+- https://dribbble.com/shots/26542947-NeuroSpark-AI-Assistant-Landing-Page-Exploration (AI assistant, gradient cards)
+- https://dribbble.com/shots/26692170-NeuroNest-Futuristic-AI-Co-Pilot-SaaS-LLM-Landing-Page-Website (AI copilot SaaS)
+
+---
+
 Create a premium SaaS landing page for **aWARE**, a voice-activated AI desktop assistant by **WARE AI**.
 
 ## CRITICAL: DARK THEME ONLY
