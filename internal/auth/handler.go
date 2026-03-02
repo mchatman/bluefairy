@@ -23,6 +23,15 @@ const (
 	maxPasswordLen = 256
 )
 
+// jsonError writes a JSON error response with the given status code and message.
+// All error responses must use this instead of http.Error to ensure clients
+// always receive JSON (not text/plain).
+func jsonError(w http.ResponseWriter, message string, code int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(map[string]string{"error": message})
+}
+
 // Handler provides HTTP handlers for authentication endpoints including
 // signup, login, and token refresh. It coordinates between the user service,
 // account service, tenant resolver, and refresh token store.
@@ -129,17 +138,17 @@ func (h *Handler) RevokeAllTokens(ctx context.Context, userID string) error {
 func (h *Handler) Signup(w http.ResponseWriter, r *http.Request) {
 	var req SignupRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
 	if req.Email == "" || !emailRE.MatchString(req.Email) {
-		http.Error(w, "Invalid email", http.StatusBadRequest)
+		jsonError(w, "Invalid email", http.StatusBadRequest)
 		return
 	}
 
 	if len(req.Password) < minPasswordLen || len(req.Password) > maxPasswordLen {
-		http.Error(w, "Password must be between 10 and 256 characters", http.StatusBadRequest)
+		jsonError(w, "Password must be between 10 and 256 characters", http.StatusBadRequest)
 		return
 	}
 
@@ -152,23 +161,23 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request) {
 
 	acc, err := h.accountService.CreateAccount(ctx, accountName)
 	if err != nil {
-		http.Error(w, "Failed to create account", http.StatusInternalServerError)
+		jsonError(w, "Failed to create account", http.StatusInternalServerError)
 		return
 	}
 
 	passwordHash, err := HashPassword(req.Password)
 	if err != nil {
-		http.Error(w, "Failed to process password", http.StatusInternalServerError)
+		jsonError(w, "Failed to process password", http.StatusInternalServerError)
 		return
 	}
 
 	usr, err := h.userService.CreateUser(ctx, acc.ID, req.Email, passwordHash, req.DisplayName, "owner")
 	if err != nil {
 		if strings.Contains(err.Error(), "already exists") {
-			http.Error(w, "User already exists", http.StatusConflict)
+			jsonError(w, "User already exists", http.StatusConflict)
 			return
 		}
-		http.Error(w, "Failed to create user", http.StatusInternalServerError)
+		jsonError(w, "Failed to create user", http.StatusInternalServerError)
 		return
 	}
 
@@ -187,7 +196,7 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request) {
 	tokens, err := h.issueTokenPair(ctx, usr)
 	if err != nil {
 		log.Printf("[auth] failed to issue tokens for user %s: %v", usr.ID, err)
-		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
+		jsonError(w, "Failed to generate token", http.StatusInternalServerError)
 		return
 	}
 
@@ -207,12 +216,12 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
 	if req.Email == "" || req.Password == "" {
-		http.Error(w, "Email and password required", http.StatusBadRequest)
+		jsonError(w, "Email and password required", http.StatusBadRequest)
 		return
 	}
 
@@ -220,23 +229,23 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 
 	usr, err := h.userService.GetUserByEmail(ctx, req.Email)
 	if err != nil {
-		http.Error(w, "Internal error", http.StatusInternalServerError)
+		jsonError(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
 	if usr == nil {
-		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+		jsonError(w, "Invalid credentials", http.StatusUnauthorized)
 		return
 	}
 
 	if !VerifyPassword(usr.PasswordHash, req.Password) {
-		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+		jsonError(w, "Invalid credentials", http.StatusUnauthorized)
 		return
 	}
 
 	tokens, err := h.issueTokenPair(ctx, usr)
 	if err != nil {
 		log.Printf("[auth] failed to issue tokens for user %s: %v", usr.ID, err)
-		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
+		jsonError(w, "Failed to generate token", http.StatusInternalServerError)
 		return
 	}
 
@@ -270,13 +279,13 @@ func (h *Handler) HandleRefreshToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if rawRefresh == "" {
-		http.Error(w, "Refresh token required", http.StatusBadRequest)
+		jsonError(w, "Refresh token required", http.StatusBadRequest)
 		return
 	}
 
 	usr, tokens, err := h.RefreshToken(r.Context(), rawRefresh)
 	if err != nil {
-		http.Error(w, "Invalid or expired refresh token", http.StatusUnauthorized)
+		jsonError(w, "Invalid or expired refresh token", http.StatusUnauthorized)
 		return
 	}
 
