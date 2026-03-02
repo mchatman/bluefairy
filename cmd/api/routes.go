@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/cors"
 	"github.com/mchatman/bluefairy/internal/account"
 	"github.com/mchatman/bluefairy/internal/auth"
 	"github.com/mchatman/bluefairy/internal/oauth"
@@ -68,6 +69,24 @@ func stripPort(hostPort string) string {
 
 func (a *App) buildAPIRouter(userService *user.Service, authHandler *auth.Handler, tenants *tenant.Client, oauthHandler *oauth.Handler) http.Handler {
 	router := chi.NewRouter()
+
+	router.Use(cors.Handler(cors.Options{
+		AllowOriginFunc: func(r *http.Request, origin string) bool {
+			// Allow dashboard and local dev
+			if origin == "https://dashboard.wareit.ai" || origin == "http://localhost:3000" {
+				return true
+			}
+			// Allow Chrome/Firefox extensions
+			if strings.HasPrefix(origin, "chrome-extension://") || strings.HasPrefix(origin, "moz-extension://") {
+				return true
+			}
+			return false
+		},
+		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
+		AllowedHeaders:   []string{"Authorization", "Content-Type"},
+		AllowCredentials: true,
+		MaxAge:           300,
+	}))
 
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -135,7 +154,7 @@ func (a *App) buildAPIRouter(userService *user.Service, authHandler *auth.Handle
 		})
 	})
 
-	// Gateway WebSocket proxy — allows the openclaw Mac app to connect to its
+	// Gateway WebSocket proxy — allows the aware Mac app to connect to its
 	// tenant gateway without a user JWT session. The tenant gateway authenticates
 	// the client via the connect frame (token in params), not the HTTP upgrade.
 	//
